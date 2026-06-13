@@ -116,16 +116,16 @@ def main() -> None:
     application = Application.builder().token(token).build()
 
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("qr", send_next_qr))
     application.add_handler(CommandHandler("chart", send_chart_image))
-    application.add_handler(
-        MessageHandler(filters.TEXT & filters.Regex(r"(?i)^qr$"), send_next_qr)
-    )
+    application.add_handler(CommandHandler("qr", send_next_qr))
     application.add_handler(
         MessageHandler(
-            filters.TEXT & filters.Regex(r"(?i)^(chart|चार्ट)$"),
+            filters.TEXT & filters.Regex(r"(?i)(chart|चार्ट)"),
             send_chart_image,
         )
+    )
+    application.add_handler(
+        MessageHandler(filters.TEXT & filters.Regex(r"(?i)(qr|क्यूआर)"), send_next_qr)
     )
 
     webhook_url = os.getenv("WEBHOOK_URL")

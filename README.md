@@ -73,16 +73,18 @@ Ya command:
 /qr
 ```
 
-Chart image ke liye:
+Chart image ke liye message ke andar kahin bhi `chart` ya `चार्ट` likhein:
 
 ```text
-chart
+chart dikhao
 ```
 
 Ya:
 
 ```text
-चार्ट
+मुझे चार्ट भेजो
 ```
+
+QR image ke liye message ke andar kahin bhi `qr` ya `क्यूआर` likhein.
 
 Har chat/user ke liye next image ka number `state.json` me save hota hai, isliye bot restart hone ke baad bhi sequence continue rahega.
