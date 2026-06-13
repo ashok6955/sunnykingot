@@ -125,7 +125,10 @@ def main() -> None:
         )
     )
     application.add_handler(
-        MessageHandler(filters.TEXT & filters.Regex(r"(?i)(qr|क्यूआर)"), send_next_qr)
+        MessageHandler(
+            filters.TEXT & filters.Regex(r"(?i)(qr|क्यूआर|scanner|scan)"),
+            send_next_qr,
+        )
     )
 
     webhook_url = os.getenv("WEBHOOK_URL")

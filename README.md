@@ -85,6 +85,6 @@ Ya:
 मुझे चार्ट भेजो
 ```
 
-QR image ke liye message ke andar kahin bhi `qr` ya `क्यूआर` likhein.
+QR image ke liye message ke andar kahin bhi `qr`, `क्यूआर`, `scan`, ya `scanner` likhein.
 
 Har chat/user ke liye next image ka number `state.json` me save hota hai, isliye bot restart hone ke baad bhi sequence continue rahega.
