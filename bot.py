@@ -10,6 +10,7 @@ from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandl
 
 BASE_DIR = Path(__file__).resolve().parent
 IMAGES_DIR = BASE_DIR / "images"
+CHART_IMAGE_DIR = BASE_DIR / "chart_image"
 STATE_FILE = BASE_DIR / "state.json"
 SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 
@@ -55,8 +56,23 @@ def get_images() -> list[Path]:
     )
 
 
+def get_chart_image() -> Path | None:
+    if not CHART_IMAGE_DIR.exists():
+        CHART_IMAGE_DIR.mkdir(parents=True, exist_ok=True)
+
+    chart_images = sorted(
+        file_path
+        for file_path in CHART_IMAGE_DIR.iterdir()
+        if file_path.is_file() and file_path.suffix.lower() in SUPPORTED_EXTENSIONS
+    )
+    return chart_images[0] if chart_images else None
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text("QR image ke liye `qr` likho.", parse_mode="Markdown")
+    await update.message.reply_text(
+        "QR image ke liye `qr` likho. Chart image ke liye `chart` likho.",
+        parse_mode="Markdown",
+    )
 
 
 async def send_next_qr(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -80,6 +96,18 @@ async def send_next_qr(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await update.message.reply_photo(photo=image_file)
 
 
+async def send_chart_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    chart_image = get_chart_image()
+    if not chart_image:
+        await update.message.reply_text(
+            "Abhi `chart_image` folder me chart image nahi hai. JPG, PNG ya WEBP file add karo."
+        )
+        return
+
+    with chart_image.open("rb") as image_file:
+        await update.message.reply_photo(photo=image_file)
+
+
 def main() -> None:
     token = os.getenv("TELEGRAM_BOT_TOKEN")
     if not token:
@@ -89,8 +117,15 @@ def main() -> None:
 
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("qr", send_next_qr))
+    application.add_handler(CommandHandler("chart", send_chart_image))
     application.add_handler(
         MessageHandler(filters.TEXT & filters.Regex(r"(?i)^qr$"), send_next_qr)
+    )
+    application.add_handler(
+        MessageHandler(
+            filters.TEXT & filters.Regex(r"(?i)^(chart|चार्ट)$"),
+            send_chart_image,
+        )
     )
 
     webhook_url = os.getenv("WEBHOOK_URL")

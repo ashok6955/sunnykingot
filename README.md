@@ -26,6 +26,13 @@ images/
 
 Images filename ke alphabetical order me send hongi. Isliye `01.png`, `02.png`, `03.png` jaisa naming best hai.
 
+Chart image ke liye ek fixed image yahan add karein:
+
+```text
+chart_image/
+  chart.png
+```
+
 4. Bot token set karke bot run karein:
 
 ```powershell
@@ -64,6 +71,18 @@ Ya command:
 
 ```text
 /qr
+```
+
+Chart image ke liye:
+
+```text
+chart
+```
+
+Ya:
+
+```text
+चार्ट
 ```
 
 Har chat/user ke liye next image ka number `state.json` me save hota hai, isliye bot restart hone ke baad bhi sequence continue rahega.
