@@ -68,8 +68,47 @@ def get_chart_image() -> Path | None:
     return chart_images[0] if chart_images else None
 
 
+def get_update_message(update: Update):
+    return update.message or update.business_message or update.effective_message
+
+
+def get_business_kwargs(update: Update) -> dict[str, str]:
+    message = get_update_message(update)
+    business_connection_id = getattr(message, "business_connection_id", None)
+    if not business_connection_id:
+        return {}
+
+    return {"business_connection_id": business_connection_id}
+
+
+async def reply_text(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    text: str,
+    **kwargs,
+) -> None:
+    message = get_update_message(update)
+    await context.bot.send_message(
+        chat_id=message.chat_id,
+        text=text,
+        **get_business_kwargs(update),
+        **kwargs,
+    )
+
+
+async def reply_photo(update: Update, context: ContextTypes.DEFAULT_TYPE, photo) -> None:
+    message = get_update_message(update)
+    await context.bot.send_photo(
+        chat_id=message.chat_id,
+        photo=photo,
+        **get_business_kwargs(update),
+    )
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text(
+    await reply_text(
+        update,
+        context,
         "QR image ke liye `qr` likho. Chart image ke liye `chart` likho.",
         parse_mode="Markdown",
     )
@@ -78,34 +117,39 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def send_next_qr(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     images = get_images()
     if not images:
-        await update.message.reply_text(
-            "Abhi `images` folder me koi image nahi hai. JPG, PNG ya WEBP file add karo."
+        await reply_text(
+            update,
+            context,
+            "Abhi `images` folder me koi image nahi hai. JPG, PNG ya WEBP file add karo.",
         )
         return
 
-    chat_id = str(update.effective_chat.id)
+    message = get_update_message(update)
+    state_key = f"{getattr(message, 'business_connection_id', '')}:{message.chat_id}"
 
     async with state_lock:
         state = load_state()
-        image_index = state.get(chat_id, 0) % len(images)
+        image_index = state.get(state_key, 0) % len(images)
         image_path = images[image_index]
-        state[chat_id] = (image_index + 1) % len(images)
+        state[state_key] = (image_index + 1) % len(images)
         save_state(state)
 
     with image_path.open("rb") as image_file:
-        await update.message.reply_photo(photo=image_file)
+        await reply_photo(update, context, image_file)
 
 
 async def send_chart_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     chart_image = get_chart_image()
     if not chart_image:
-        await update.message.reply_text(
-            "Abhi `chart_image` folder me chart image nahi hai. JPG, PNG ya WEBP file add karo."
+        await reply_text(
+            update,
+            context,
+            "Abhi `chart_image` folder me chart image nahi hai. JPG, PNG ya WEBP file add karo.",
         )
         return
 
     with chart_image.open("rb") as image_file:
-        await update.message.reply_photo(photo=image_file)
+        await reply_photo(update, context, image_file)
 
 
 def main() -> None:
@@ -120,13 +164,14 @@ def main() -> None:
     application.add_handler(CommandHandler("qr", send_next_qr))
     application.add_handler(
         MessageHandler(
-            filters.TEXT & filters.Regex(r"(?i)(chart|चार्ट)"),
+            filters.TEXT & filters.Regex(r"(?i)(chart|\u091a\u093e\u0930\u094d\u091f)"),
             send_chart_image,
         )
     )
     application.add_handler(
         MessageHandler(
-            filters.TEXT & filters.Regex(r"(?i)(qr|क्यूआर|scanner|scan)"),
+            filters.TEXT
+            & filters.Regex(r"(?i)(qr|\u0915\u094d\u092f\u0942\u0906\u0930|scanner|scan)"),
             send_next_qr,
         )
     )
