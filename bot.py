@@ -164,7 +164,10 @@ def main() -> None:
     application.add_handler(CommandHandler("qr", send_next_qr))
     application.add_handler(
         MessageHandler(
-            filters.TEXT & filters.Regex(r"(?i)(chart|\u091a\u093e\u0930\u094d\u091f)"),
+            filters.TEXT
+            & filters.Regex(
+                r"(?i)(chart|time|timing|\u091a\u093e\u0930\u094d\u091f|\u091f\u093e\u0907\u092e|\u091f\u093e\u0907\u092e\u093f\u0902\u0917)"
+            ),
             send_chart_image,
         )
     )

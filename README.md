@@ -73,7 +73,7 @@ Ya command:
 /qr
 ```
 
-Chart image ke liye message ke andar kahin bhi `chart` ya `चार्ट` likhein:
+Chart image ke liye message ke andar kahin bhi `chart`, `चार्ट`, `time`, ya `timing` likhein:
 
 ```text
 chart dikhao
