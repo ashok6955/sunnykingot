@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 from pathlib import Path
 
 from telegram import Update
@@ -23,6 +24,11 @@ logger = logging.getLogger(__name__)
 
 
 state_lock = asyncio.Lock()
+
+
+def natural_sort_key(file_path: Path) -> list[int | str]:
+    parts = re.split(r"(\d+)", file_path.name.lower())
+    return [int(part) if part.isdigit() else part for part in parts]
 
 
 def load_state() -> dict[str, int]:
@@ -52,7 +58,8 @@ def get_images() -> list[Path]:
     return sorted(
         file_path
         for file_path in IMAGES_DIR.iterdir()
-        if file_path.is_file() and file_path.suffix.lower() in SUPPORTED_EXTENSIONS
+        if file_path.is_file() and file_path.suffix.lower() in SUPPORTED_EXTENSIONS,
+        key=natural_sort_key,
     )
 
 
@@ -109,7 +116,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await reply_text(
         update,
         context,
-        "QR image ke liye `qr` likho. Chart image ke liye `chart` likho.",
+        "QR image ke liye `qr` likho. Bot `images` folder ki files ko sequence order me bhejega. Chart image ke liye `chart` likho.",
         parse_mode="Markdown",
     )
 

@@ -26,6 +26,8 @@ images/
 
 Images filename ke alphabetical order me send hongi. Isliye `01.png`, `02.png`, `03.png` jaisa naming best hai.
 
+Current setup me `images` folder ki files `01` se `43` tak sequence me renamed hain, isliye bot ab unhe isi fixed order me bhejega.
+
 Chart image ke liye ek fixed image yahan add karein:
 
 ```text
