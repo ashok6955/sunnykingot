@@ -56,9 +56,11 @@ def get_images() -> list[Path]:
         IMAGES_DIR.mkdir(parents=True, exist_ok=True)
 
     return sorted(
-        file_path
-        for file_path in IMAGES_DIR.iterdir()
-        if file_path.is_file() and file_path.suffix.lower() in SUPPORTED_EXTENSIONS,
+        (
+            file_path
+            for file_path in IMAGES_DIR.iterdir()
+            if file_path.is_file() and file_path.suffix.lower() in SUPPORTED_EXTENSIONS
+        ),
         key=natural_sort_key,
     )
 
