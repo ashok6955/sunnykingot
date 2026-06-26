@@ -183,7 +183,9 @@ def main() -> None:
     application.add_handler(
         MessageHandler(
             filters.TEXT
-            & filters.Regex(r"(?i)(qr|\u0915\u094d\u092f\u0942\u0906\u0930|scanner|scan)"),
+            & filters.Regex(
+                r"(?i)(qr|\u0915\u094d\u092f\u0942\u0906\u0930|scanner|scan|barcode|bar\s*code)"
+            ),
             send_next_qr,
         )
     )

@@ -87,7 +87,7 @@ Ya:
 मुझे चार्ट भेजो
 ```
 
-QR image ke liye message ke andar kahin bhi `qr`, `क्यूआर`, `scan`, ya `scanner` likhein.
+QR image ke liye message ke andar kahin bhi `qr`, `क्यूआर`, `scan`, `scanner`, `barcode`, ya `bar code` likhein.
 
 Har chat/user ke liye next image ka number `state.json` me save hota hai, isliye bot restart hone ke baad bhi sequence continue rahega.
 
@@ -102,4 +102,4 @@ Private customer chats me bot use karne ke liye Telegram me Business Mode enable
 5. Telegram app me `Settings` > `Telegram Business` > `Chatbots` open karein.
 6. Apna bot add karein aur `Reply to messages` allow karein.
 
-Iske baad business private chats me user `qr`, `scan`, `scanner`, `chart`, ya `चार्ट` likhega to bot reply kar sakega.
+Iske baad business private chats me user `qr`, `scan`, `scanner`, `barcode`, `bar code`, `chart`, ya `चार्ट` likhega to bot reply kar sakega.
