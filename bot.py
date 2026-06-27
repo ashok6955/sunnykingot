@@ -59,7 +59,7 @@ def save_state(state: dict[str, int]) -> None:
     )
 
 
-def load_chat_memory() -> dict[str, list[str]]:
+def load_chat_memory() -> dict[str, str]:
     if not CHAT_MEMORY_FILE.exists():
         return {}
 
@@ -72,20 +72,20 @@ def load_chat_memory() -> dict[str, list[str]]:
     if not isinstance(data, dict):
         return {}
 
-    memory: dict[str, list[str]] = {}
+    memory: dict[str, str] = {}
     for chat_id, value in data.items():
         key = str(chat_id)
         if isinstance(value, str) and value.strip():
-            memory[key] = [value.strip()]
+            memory[key] = value.strip()
             continue
         if isinstance(value, list):
             messages = [str(item).strip() for item in value if str(item).strip()]
             if messages:
-                memory[key] = messages
+                memory[key] = messages[-1]
     return memory
 
 
-def save_chat_memory(memory: dict[str, list[str]]) -> None:
+def save_chat_memory(memory: dict[str, str]) -> None:
     CHAT_MEMORY_FILE.write_text(
         json.dumps(memory, indent=2, sort_keys=True, ensure_ascii=False),
         encoding="utf-8",
@@ -228,8 +228,7 @@ async def send_game_total(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         source_text = str(reply_to_message.text or "").strip()
     else:
         memory = load_chat_memory()
-        recent_messages = memory.get(str(message.chat_id), [])
-        source_text = "\n".join(recent_messages).strip()
+        source_text = memory.get(str(message.chat_id), "").strip()
 
     if not source_text:
         await reply_text(
@@ -265,9 +264,7 @@ async def remember_recent_game_message(update: Update, context: ContextTypes.DEF
             save_chat_memory(memory)
         return
 
-    recent_messages = memory.get(chat_key, [])
-    recent_messages.append(text)
-    memory[chat_key] = recent_messages[-10:]
+    memory[chat_key] = text
     save_chat_memory(memory)
 
 

@@ -161,7 +161,7 @@ def parse_fast_game_total_summary(value: str) -> GameTotalSummary | None:
         )
 
     def extract_number_tokens(line: str) -> list[str]:
-        compact_match = re.fullmatch(r"\s*(\d{1,3})[.,/-](\d+(?:\.\d+)?)\s*", line)
+        compact_match = re.fullmatch(r"\s*(\d+)[.,/-](\d+(?:\.\d+)?)\s*", line)
         if compact_match:
             return [compact_match.group(1)]
         scrubbed = re.sub(r"\b(?:into|intu|in to)\s*\d+(?:\.\d+)?", " ", line, flags=re.IGNORECASE)
@@ -169,7 +169,7 @@ def parse_fast_game_total_summary(value: str) -> GameTotalSummary | None:
         scrubbed = re.sub(r"@+\s*\d+(?:\.\d+)?", " ", scrubbed)
         scrubbed = re.sub(r"\b\d+(?:\.\d+)?\s*rs\b", " ", scrubbed, flags=re.IGNORECASE)
         scrubbed = re.sub(r"-\d+(?:\.\d+)?\s*rs-", " ", scrubbed, flags=re.IGNORECASE)
-        return [token for token in re.findall(r"\d{1,3}", scrubbed) if token.lower() not in ignored_words]
+        return [token for token in re.findall(r"\d+", scrubbed) if token.lower() not in ignored_words]
 
     segments: list[GameTotalBreakdown] = []
     pending_count = 0
