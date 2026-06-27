@@ -77,6 +77,8 @@ Ya command:
 /qr
 ```
 
+Game total ke liye pehle game message bhejein, phir `total` ya `/total` likhein. Agar ek hi recent game message hai to bot uska total nikaalega. Agar 3-4 recent game messages lagatar aaye hain to bot un sab ka combined total nikaalega. Agar kisi specific game message ka total chahiye ho to us message par reply karke `total` likh sakte hain.
+
 Chart image ke liye message ke andar kahin bhi `chart`, `चार्ट`, `time`, ya `timing` likhein:
 
 ```text
