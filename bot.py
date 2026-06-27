@@ -3,7 +3,9 @@ import json
 import logging
 import os
 import re
+from datetime import datetime, time
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
@@ -14,6 +16,9 @@ IMAGES_DIR = BASE_DIR / "images"
 CHART_IMAGE_DIR = BASE_DIR / "chart_image"
 STATE_FILE = BASE_DIR / "state.json"
 SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
+BOT_TIMEZONE = ZoneInfo("Asia/Kolkata")
+QUIET_HOURS_START = time(4, 0)
+QUIET_HOURS_END = time(6, 0)
 
 
 logging.basicConfig(
@@ -90,6 +95,11 @@ def get_business_kwargs(update: Update) -> dict[str, str]:
     return {"business_connection_id": business_connection_id}
 
 
+def is_quiet_hours() -> bool:
+    current_time = datetime.now(BOT_TIMEZONE).time()
+    return QUIET_HOURS_START <= current_time < QUIET_HOURS_END
+
+
 async def reply_text(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -115,6 +125,9 @@ async def reply_photo(update: Update, context: ContextTypes.DEFAULT_TYPE, photo)
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if is_quiet_hours():
+        return
+
     await reply_text(
         update,
         context,
@@ -124,6 +137,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def send_next_qr(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if is_quiet_hours():
+        return
+
     images = get_images()
     if not images:
         await reply_text(
@@ -148,6 +164,9 @@ async def send_next_qr(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 
 async def send_chart_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if is_quiet_hours():
+        return
+
     chart_image = get_chart_image()
     if not chart_image:
         await reply_text(

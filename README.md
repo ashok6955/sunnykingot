@@ -28,6 +28,8 @@ Images filename ke alphabetical order me send hongi. Isliye `01.png`, `02.png`, 
 
 Current setup me `images` folder ki files `01` se `43` tak sequence me renamed hain, isliye bot ab unhe isi fixed order me bhejega.
 
+Bot daily subah `4:00 AM` se `6:00 AM` tak `Asia/Kolkata` time ke hisaab se kaam nahi karega.
+
 Chart image ke liye ek fixed image yahan add karein:
 
 ```text
@@ -90,6 +92,8 @@ Ya:
 QR image ke liye message ke andar kahin bhi `qr`, `क्यूआर`, `scan`, `scanner`, `barcode`, ya `bar code` likhein.
 
 Har chat/user ke liye next image ka number `state.json` me save hota hai, isliye bot restart hone ke baad bhi sequence continue rahega.
+
+Note: Subah `4:00 AM` se `6:00 AM` ke beech bot koi reply nahi bhejega.
 
 ## Telegram Business
 
