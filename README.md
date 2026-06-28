@@ -77,6 +77,8 @@ Ya command:
 /qr
 ```
 
+Group ID dekhne ke liye kisi group me `/groupid` likhein. Bot us group ka Telegram chat ID reply karega.
+
 Game total ke liye pehle game message bhejein, phir `total` ya `/total` likhein. Bot sirf latest recent game message ka total nikaalega. Agar kisi specific game message ka total chahiye ho to us message par reply karke `total` likh sakte hain.
 
 Chart image ke liye message ke andar kahin bhi `chart`, `चार्ट`, `time`, ya `timing` likhein:

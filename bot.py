@@ -172,6 +172,21 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     )
 
 
+async def send_group_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if is_quiet_hours():
+        return
+
+    message = get_update_message(update)
+    chat = getattr(message, "chat", None)
+    chat_id = getattr(chat, "id", None)
+
+    if chat_id is None:
+        await reply_text(update, context, "Group ID nahi mila.")
+        return
+
+    await reply_text(update, context, f"Group ID: `{chat_id}`", parse_mode="Markdown")
+
+
 async def send_next_qr(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if is_quiet_hours():
         return
@@ -276,6 +291,7 @@ def main() -> None:
     application = Application.builder().token(token).build()
 
     application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("groupid", send_group_id))
     application.add_handler(CommandHandler("chart", send_chart_image))
     application.add_handler(CommandHandler("qr", send_next_qr))
     application.add_handler(CommandHandler("total", send_game_total))
