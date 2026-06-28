@@ -100,6 +100,8 @@ Target group clear karne ke liye:
 /cleartargetgroup
 ```
 
+`ds ok` likhne par bot latest recent game message ko target group me as a bot text bhej dega aur pehle source chat me `DISAWAR GAME OK ✔` reply karega. Agar kisi specific game message ko bhejna ho to us message par reply karke `ds ok` likhein.
+
 Game total ke liye pehle game message bhejein, phir `total` ya `/total` likhein. Bot sirf latest recent game message ka total nikaalega. Agar kisi specific game message ka total chahiye ho to us message par reply karke `total` likh sakte hain.
 
 Chart image ke liye message ke andar kahin bhi `chart`, `चार्ट`, `time`, ya `timing` likhein:

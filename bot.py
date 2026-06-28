@@ -392,6 +392,52 @@ async def send_game_total(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     await reply_text(update, context, reply_text_value)
 
 
+async def send_ds_ok(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if is_quiet_hours():
+        return
+
+    target_group_id = get_target_group_id()
+    if target_group_id is None:
+        await reply_text(
+            update,
+            context,
+            "Target group set nahi hai. Pehle `/settargetgroup -1004304577201` ya target group ke andar `/settargetgroup` likho.",
+            parse_mode="Markdown",
+        )
+        return
+
+    message = get_update_message(update)
+    reply_to_message = getattr(message, "reply_to_message", None)
+    source_text = ""
+
+    if reply_to_message and getattr(reply_to_message, "text", None):
+        source_text = str(reply_to_message.text or "").strip()
+    else:
+        memory = load_chat_memory()
+        source_text = memory.get(str(message.chat_id), "").strip()
+
+    if not source_text:
+        await reply_text(
+            update,
+            context,
+            "Koi recent game message nahi mila. Pehle number wala message bhejo ya us message par reply karke `ds ok` likho.",
+            parse_mode="Markdown",
+        )
+        return
+
+    if not looks_like_game_message(source_text):
+        await reply_text(
+            update,
+            context,
+            "Latest message game format me nahi mila. Number wala game message bhejo ya usi par reply karke `ds ok` likho.",
+            parse_mode="Markdown",
+        )
+        return
+
+    await reply_text(update, context, "DISAWAR GAME OK ✔")
+    await context.bot.send_message(chat_id=target_group_id, text=source_text)
+
+
 async def remember_recent_game_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message = get_update_message(update)
     text = str(getattr(message, "text", "") or "").strip()
@@ -401,7 +447,7 @@ async def remember_recent_game_message(update: Update, context: ContextTypes.DEF
     memory = load_chat_memory()
     chat_key = str(message.chat_id)
 
-    if re.fullmatch(r"(?i)\s*(/total|total)\s*", text):
+    if re.fullmatch(r"(?i)\s*(/total|total|ds\s+ok)\s*", text):
         return
 
     if not looks_like_game_message(text):
@@ -451,6 +497,12 @@ def main() -> None:
         MessageHandler(
             filters.TEXT & filters.Regex(r"(?i)^\s*total\s*$"),
             send_game_total,
+        )
+    )
+    application.add_handler(
+        MessageHandler(
+            filters.TEXT & filters.Regex(r"(?i)^\s*ds\s+ok\s*$"),
+            send_ds_ok,
         )
     )
     application.add_handler(
