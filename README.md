@@ -57,6 +57,7 @@ Render ka free web service use karke bot online rakh sakte hain. Free service id
 ```text
 TELEGRAM_BOT_TOKEN=BotFather se mila token
 WEBHOOK_URL=https://aapka-render-service-url.onrender.com
+TARGET_GROUP_ID=-1004304577201
 ```
 
 6. Deploy complete hone ke baad Telegram me bot ko `qr` bhejein.
@@ -78,6 +79,26 @@ Ya command:
 ```
 
 Group ID dekhne ke liye kisi group me `/groupid` likhein. Bot us group ka Telegram chat ID reply karega.
+
+Target group dekhne ke liye `/targetgroup` likhein.
+
+Target group set karne ke 2 tareeqe hain:
+
+```text
+/settargetgroup -1004304577201
+```
+
+Ya jis group ko target banana ho us group ke andar:
+
+```text
+/settargetgroup
+```
+
+Target group clear karne ke liye:
+
+```text
+/cleartargetgroup
+```
 
 Game total ke liye pehle game message bhejein, phir `total` ya `/total` likhein. Bot sirf latest recent game message ka total nikaalega. Agar kisi specific game message ka total chahiye ho to us message par reply karke `total` likh sakte hain.
 

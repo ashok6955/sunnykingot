@@ -18,6 +18,7 @@ IMAGES_DIR = BASE_DIR / "images"
 CHART_IMAGE_DIR = BASE_DIR / "chart_image"
 STATE_FILE = BASE_DIR / "state.json"
 CHAT_MEMORY_FILE = BASE_DIR / "chat_memory.json"
+SETTINGS_FILE = BASE_DIR / "bot_settings.json"
 SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 BOT_TIMEZONE = ZoneInfo("Asia/Kolkata")
 QUIET_HOURS_START = time(4, 0)
@@ -90,6 +91,55 @@ def save_chat_memory(memory: dict[str, str]) -> None:
         json.dumps(memory, indent=2, sort_keys=True, ensure_ascii=False),
         encoding="utf-8",
     )
+
+
+def load_settings() -> dict[str, int]:
+    if not SETTINGS_FILE.exists():
+        return {}
+
+    try:
+        data = json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        logger.warning("Could not read settings file. Starting with empty settings.")
+        return {}
+
+    if not isinstance(data, dict):
+        return {}
+
+    settings: dict[str, int] = {}
+    target_group_id = data.get("target_group_id")
+    if isinstance(target_group_id, int):
+        settings["target_group_id"] = target_group_id
+    elif isinstance(target_group_id, str):
+        parsed_target_group_id = parse_chat_id(target_group_id)
+        if parsed_target_group_id is not None:
+            settings["target_group_id"] = parsed_target_group_id
+    return settings
+
+
+def save_settings(settings: dict[str, int]) -> None:
+    SETTINGS_FILE.write_text(
+        json.dumps(settings, indent=2, sort_keys=True, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+
+def parse_chat_id(value: str | int | None) -> int | None:
+    if value is None:
+        return None
+
+    try:
+        return int(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def get_target_group_id() -> int | None:
+    settings = load_settings()
+    if "target_group_id" in settings:
+        return settings["target_group_id"]
+
+    return parse_chat_id(os.getenv("TARGET_GROUP_ID"))
 
 
 def get_images() -> list[Path]:
@@ -185,6 +235,87 @@ async def send_group_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         return
 
     await reply_text(update, context, f"Group ID: `{chat_id}`", parse_mode="Markdown")
+
+
+async def show_target_group(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if is_quiet_hours():
+        return
+
+    target_group_id = get_target_group_id()
+    if target_group_id is None:
+        await reply_text(
+            update,
+            context,
+            "Abhi target group set nahi hai. `/settargetgroup -1004304577201` ya target group ke andar `/settargetgroup` likho.",
+            parse_mode="Markdown",
+        )
+        return
+
+    await reply_text(
+        update,
+        context,
+        f"Current target group ID: `{target_group_id}`",
+        parse_mode="Markdown",
+    )
+
+
+async def set_target_group(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if is_quiet_hours():
+        return
+
+    message = get_update_message(update)
+    args = list(getattr(context, "args", []) or [])
+
+    target_group_id: int | None = None
+    if args:
+        target_group_id = parse_chat_id(args[0])
+    else:
+        chat = getattr(message, "chat", None)
+        chat_type = str(getattr(chat, "type", "") or "").lower()
+        if chat_type in {"group", "supergroup", "channel"}:
+            target_group_id = parse_chat_id(getattr(chat, "id", None))
+
+    if target_group_id is None:
+        await reply_text(
+            update,
+            context,
+            "Target group set karne ke liye `/settargetgroup -1004304577201` likho ya jis group ko target banana ho uske andar `/settargetgroup` likho.",
+            parse_mode="Markdown",
+        )
+        return
+
+    settings = load_settings()
+    settings["target_group_id"] = target_group_id
+    save_settings(settings)
+
+    await reply_text(
+        update,
+        context,
+        f"Target group set ho gaya: `{target_group_id}`",
+        parse_mode="Markdown",
+    )
+
+
+async def clear_target_group(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if is_quiet_hours():
+        return
+
+    settings = load_settings()
+    if "target_group_id" in settings:
+        del settings["target_group_id"]
+        save_settings(settings)
+
+    env_target_group_id = parse_chat_id(os.getenv("TARGET_GROUP_ID"))
+    if env_target_group_id is not None:
+        await reply_text(
+            update,
+            context,
+            f"Saved target group clear ho gaya. Env fallback abhi bhi `{env_target_group_id}` hai.",
+            parse_mode="Markdown",
+        )
+        return
+
+    await reply_text(update, context, "Target group clear ho gaya.")
 
 
 async def send_next_qr(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -292,6 +423,9 @@ def main() -> None:
 
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("groupid", send_group_id))
+    application.add_handler(CommandHandler("targetgroup", show_target_group))
+    application.add_handler(CommandHandler("settargetgroup", set_target_group))
+    application.add_handler(CommandHandler("cleartargetgroup", clear_target_group))
     application.add_handler(CommandHandler("chart", send_chart_image))
     application.add_handler(CommandHandler("qr", send_next_qr))
     application.add_handler(CommandHandler("total", send_game_total))

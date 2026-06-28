@@ -10,3 +10,5 @@ services:
         sync: false
       - key: WEBHOOK_URL
         sync: false
+      - key: TARGET_GROUP_ID
+        sync: false
