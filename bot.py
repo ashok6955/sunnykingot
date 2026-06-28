@@ -60,7 +60,7 @@ def save_state(state: dict[str, int]) -> None:
     )
 
 
-def load_chat_memory() -> dict[str, str]:
+def load_chat_memory() -> dict[str, list[str]]:
     if not CHAT_MEMORY_FILE.exists():
         return {}
 
@@ -73,20 +73,20 @@ def load_chat_memory() -> dict[str, str]:
     if not isinstance(data, dict):
         return {}
 
-    memory: dict[str, str] = {}
+    memory: dict[str, list[str]] = {}
     for chat_id, value in data.items():
         key = str(chat_id)
         if isinstance(value, str) and value.strip():
-            memory[key] = value.strip()
+            memory[key] = [value.strip()]
             continue
         if isinstance(value, list):
             messages = [str(item).strip() for item in value if str(item).strip()]
             if messages:
-                memory[key] = messages[-1]
+                memory[key] = messages
     return memory
 
 
-def save_chat_memory(memory: dict[str, str]) -> None:
+def save_chat_memory(memory: dict[str, list[str]]) -> None:
     CHAT_MEMORY_FILE.write_text(
         json.dumps(memory, indent=2, sort_keys=True, ensure_ascii=False),
         encoding="utf-8",
@@ -140,6 +140,11 @@ def get_target_group_id() -> int | None:
         return settings["target_group_id"]
 
     return parse_chat_id(os.getenv("TARGET_GROUP_ID"))
+
+
+def get_recent_game_messages(memory: dict[str, list[str]], chat_id: int, limit: int = 10) -> list[str]:
+    messages = memory.get(str(chat_id), [])
+    return [message for message in messages if message.strip()][-limit:]
 
 
 def get_images() -> list[Path]:
@@ -374,7 +379,8 @@ async def send_game_total(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         source_text = str(reply_to_message.text or "").strip()
     else:
         memory = load_chat_memory()
-        source_text = memory.get(str(message.chat_id), "").strip()
+        recent_messages = get_recent_game_messages(memory, message.chat_id, limit=1)
+        source_text = recent_messages[-1].strip() if recent_messages else ""
 
     if not source_text:
         await reply_text(
@@ -411,31 +417,42 @@ async def send_ds_ok(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     source_text = ""
 
     if reply_to_message and getattr(reply_to_message, "text", None):
-        source_text = str(reply_to_message.text or "").strip()
+        source_messages = [str(reply_to_message.text or "").strip()]
     else:
         memory = load_chat_memory()
-        source_text = memory.get(str(message.chat_id), "").strip()
+        source_messages = get_recent_game_messages(memory, message.chat_id)
 
-    if not source_text:
+    source_messages = [text for text in source_messages if text.strip()]
+
+    if not source_messages:
         await reply_text(
             update,
             context,
-            "Koi recent game message nahi mila. Pehle number wala message bhejo ya us message par reply karke `ds ok` likho.",
+            "Koi recent game message nahi mila. Pehle number wale game message bhejo ya unme se kisi message par reply karke `ds ok` likho.",
             parse_mode="Markdown",
         )
         return
 
-    if not looks_like_game_message(source_text):
+    invalid_messages = [text for text in source_messages if not looks_like_game_message(text)]
+    if invalid_messages:
         await reply_text(
             update,
             context,
-            "Latest message game format me nahi mila. Number wala game message bhejo ya usi par reply karke `ds ok` likho.",
+            "Recent saved message game format me nahi mila. Number wala game message bhejo ya game message par reply karke `ds ok` likho.",
             parse_mode="Markdown",
         )
         return
 
     await reply_text(update, context, "DISAWAR GAME OK ✔")
-    await context.bot.send_message(chat_id=target_group_id, text=source_text)
+    for source_text in source_messages:
+        await context.bot.send_message(chat_id=target_group_id, text=source_text)
+
+    if not reply_to_message:
+        memory = load_chat_memory()
+        chat_key = str(message.chat_id)
+        if chat_key in memory:
+            del memory[chat_key]
+            save_chat_memory(memory)
 
 
 async def remember_recent_game_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -451,12 +468,11 @@ async def remember_recent_game_message(update: Update, context: ContextTypes.DEF
         return
 
     if not looks_like_game_message(text):
-        if chat_key in memory:
-            del memory[chat_key]
-            save_chat_memory(memory)
         return
 
-    memory[chat_key] = text
+    existing_messages = get_recent_game_messages(memory, message.chat_id, limit=9)
+    existing_messages.append(text)
+    memory[chat_key] = existing_messages[-10:]
     save_chat_memory(memory)
 
 
