@@ -8,6 +8,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from telegram import Update
+from telegram.error import TimedOut
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 
 from game_total import build_game_total_reply, looks_like_game_message
@@ -191,6 +192,21 @@ def is_quiet_hours() -> bool:
     return QUIET_HOURS_START <= current_time < QUIET_HOURS_END
 
 
+async def send_with_retry(send_callable, *args, retries: int = 2, retry_delay: float = 1.0, **kwargs):
+    last_error = None
+    for attempt in range(retries + 1):
+        try:
+            return await send_callable(*args, **kwargs)
+        except TimedOut as error:
+            last_error = error
+            logger.warning("Telegram request timed out on attempt %s/%s", attempt + 1, retries + 1)
+            if attempt >= retries:
+                raise
+            await asyncio.sleep(retry_delay)
+
+    raise last_error
+
+
 async def reply_text(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -198,7 +214,8 @@ async def reply_text(
     **kwargs,
 ) -> None:
     message = get_update_message(update)
-    await context.bot.send_message(
+    await send_with_retry(
+        context.bot.send_message,
         chat_id=message.chat_id,
         text=text,
         **get_business_kwargs(update),
@@ -208,7 +225,8 @@ async def reply_text(
 
 async def reply_photo(update: Update, context: ContextTypes.DEFAULT_TYPE, photo) -> None:
     message = get_update_message(update)
-    await context.bot.send_photo(
+    await send_with_retry(
+        context.bot.send_photo,
         chat_id=message.chat_id,
         photo=photo,
         **get_business_kwargs(update),
@@ -445,7 +463,7 @@ async def send_ds_ok(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
     await reply_text(update, context, "DISAWAR GAME OK ✔")
     for source_text in source_messages:
-        await context.bot.send_message(chat_id=target_group_id, text=source_text)
+        await send_with_retry(context.bot.send_message, chat_id=target_group_id, text=source_text)
 
     if not reply_to_message:
         memory = load_chat_memory()
@@ -481,7 +499,15 @@ def main() -> None:
     if not token:
         raise RuntimeError("Please set TELEGRAM_BOT_TOKEN environment variable.")
 
-    application = Application.builder().token(token).build()
+    application = (
+        Application.builder()
+        .token(token)
+        .connect_timeout(30)
+        .read_timeout(30)
+        .write_timeout(30)
+        .pool_timeout(30)
+        .build()
+    )
 
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("groupid", send_group_id))

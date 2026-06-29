@@ -63,6 +63,7 @@ TARGET_GROUP_ID=-1004304577201
 6. Deploy complete hone ke baad Telegram me bot ko `qr` bhejein.
 
 Note: Free Render service ka filesystem temporary hota hai. Bot restart/sleep ke baad sequence first image se start ho sakta hai.
+Free plan par kabhi-kabhi network delay ya sleep ki wajah se temporary timeout aa sakta hai. Bot me basic retry logic add hai, isliye short timeout me wo automatically dubara try karega.
 
 ## Use
 
