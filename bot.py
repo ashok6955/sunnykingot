@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo
 
 from telegram import Update
 from telegram.error import TimedOut
-from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
+from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, TypeHandler, filters
 
 from game_total import build_game_total_reply, looks_like_game_message
 
@@ -205,6 +205,35 @@ async def send_with_retry(send_callable, *args, retries: int = 2, retry_delay: f
             await asyncio.sleep(retry_delay)
 
     raise last_error
+
+
+async def log_incoming_update(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    message = get_update_message(update)
+    if not message:
+        logger.info("Incoming update without message payload: %s", type(update).__name__)
+        return
+
+    chat_id = getattr(message, "chat_id", None)
+    chat_type = getattr(getattr(message, "chat", None), "type", None)
+    text = str(getattr(message, "text", "") or "").strip()
+    has_photo = bool(getattr(message, "photo", None))
+    has_video = bool(getattr(message, "video", None))
+    has_document = bool(getattr(message, "document", None))
+
+    logger.info(
+        "Incoming update chat_id=%s chat_type=%s text=%r photo=%s video=%s document=%s business=%s",
+        chat_id,
+        chat_type,
+        text[:200],
+        has_photo,
+        has_video,
+        has_document,
+        bool(getattr(message, "business_connection_id", None)),
+    )
+
+
+async def log_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    logger.exception("Unhandled bot error while processing update=%r", update, exc_info=context.error)
 
 
 async def reply_text(
@@ -509,6 +538,9 @@ def main() -> None:
         .build()
     )
 
+    application.add_error_handler(log_error)
+
+    application.add_handler(TypeHandler(Update, log_incoming_update), group=-1)
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("groupid", send_group_id))
     application.add_handler(CommandHandler("targetgroup", show_target_group))
