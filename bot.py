@@ -7,6 +7,7 @@ from datetime import datetime, time
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+import httpx
 from telegram import Update
 from telegram.error import TimedOut
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, TypeHandler, filters
@@ -107,14 +108,30 @@ def load_settings() -> dict[str, int]:
     if not isinstance(data, dict):
         return {}
 
-    settings: dict[str, int] = {}
-    target_group_id = data.get("target_group_id")
-    if isinstance(target_group_id, int):
-        settings["target_group_id"] = target_group_id
-    elif isinstance(target_group_id, str):
-        parsed_target_group_id = parse_chat_id(target_group_id)
-        if parsed_target_group_id is not None:
-            settings["target_group_id"] = parsed_target_group_id
+    settings: dict[str, int | dict[str, int]] = {}
+
+    for key in ("target_group_id", "source_group_id", "admin_chat_id"):
+        value = data.get(key)
+        if isinstance(value, int):
+            settings[key] = value
+            continue
+        if isinstance(value, str):
+            parsed_value = parse_chat_id(value)
+            if parsed_value is not None:
+                settings[key] = parsed_value
+
+    topic_map_data = data.get("user_topic_map")
+    if isinstance(topic_map_data, dict):
+        parsed_topic_map: dict[str, int] = {}
+        for user_key, thread_value in topic_map_data.items():
+            if not isinstance(user_key, str):
+                continue
+            parsed_thread_id = parse_chat_id(thread_value)
+            if parsed_thread_id is None:
+                continue
+            parsed_topic_map[user_key] = parsed_thread_id
+        settings["user_topic_map"] = parsed_topic_map
+
     return settings
 
 
@@ -138,9 +155,37 @@ def parse_chat_id(value: str | int | None) -> int | None:
 def get_target_group_id() -> int | None:
     settings = load_settings()
     if "target_group_id" in settings:
-        return settings["target_group_id"]
+        return int(settings["target_group_id"])
 
     return parse_chat_id(os.getenv("TARGET_GROUP_ID"))
+
+
+def get_source_group_id() -> int | None:
+    settings = load_settings()
+    if "source_group_id" in settings:
+        return int(settings["source_group_id"])
+
+    return parse_chat_id(os.getenv("SOURCE_GROUP_ID"))
+
+
+def get_admin_chat_id() -> int | None:
+    settings = load_settings()
+    if "admin_chat_id" in settings:
+        return int(settings["admin_chat_id"])
+
+    return parse_chat_id(os.getenv("ADMIN_CHAT_ID"))
+
+
+def get_user_topic_map(settings: dict[str, int | dict[str, int]] | None = None) -> dict[str, int]:
+    settings = settings or load_settings()
+    topic_map = settings.get("user_topic_map", {})
+    if isinstance(topic_map, dict):
+        return {str(key): int(value) for key, value in topic_map.items()}
+    return {}
+
+
+def build_topic_map_key(source_group_id: int, user_id: int) -> str:
+    return f"{source_group_id}:{user_id}"
 
 
 def get_recent_game_messages(memory: dict[str, list[str]], chat_id: int, limit: int = 10) -> list[str]:
@@ -207,6 +252,99 @@ async def send_with_retry(send_callable, *args, retries: int = 2, retry_delay: f
     raise last_error
 
 
+async def telegram_api_post(method: str, payload: dict, files: dict | None = None) -> dict:
+    token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+    if not token:
+        raise RuntimeError("Please set TELEGRAM_BOT_TOKEN environment variable.")
+
+    url = f"https://api.telegram.org/bot{token}/{method}"
+    timeout = httpx.Timeout(30.0, connect=30.0, read=30.0, write=30.0, pool=30.0)
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        if files:
+            response = await client.post(url, data=payload, files=files)
+        else:
+            response = await client.post(url, json=payload)
+        response.raise_for_status()
+
+    data = response.json()
+    if not data.get("ok"):
+        raise RuntimeError(f"Telegram API {method} failed: {data}")
+
+    return data["result"]
+
+
+def build_topic_title(user) -> str:
+    first_name = str(getattr(user, "first_name", "") or "").strip()
+    last_name = str(getattr(user, "last_name", "") or "").strip()
+    username = str(getattr(user, "username", "") or "").strip()
+
+    title_base = " ".join(part for part in (first_name, last_name) if part).strip()
+    if not title_base and username:
+        title_base = f"@{username}"
+    if not title_base:
+        title_base = f"User {getattr(user, 'id', 'unknown')}"
+
+    topic_title = f"{title_base} | {getattr(user, 'id', '')}".strip()
+    return topic_title[:120]
+
+
+def is_image_document(message) -> bool:
+    document = getattr(message, "document", None)
+    if not document:
+        return False
+
+    mime_type = str(getattr(document, "mime_type", "") or "").lower()
+    file_name = str(getattr(document, "file_name", "") or "").lower()
+    return mime_type.startswith("image/") or file_name.endswith(tuple(SUPPORTED_EXTENSIONS))
+
+
+def should_relay_group_message(message) -> bool:
+    text = str(getattr(message, "text", "") or "").strip()
+    if text and looks_like_game_message(text):
+        return True
+
+    if getattr(message, "photo", None):
+        return True
+
+    if is_image_document(message):
+        return True
+
+    return False
+
+
+async def get_or_create_user_topic(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    source_group_id: int,
+    admin_chat_id: int,
+) -> int:
+    settings = load_settings()
+    topic_map = get_user_topic_map(settings)
+    message = get_update_message(update)
+    user = getattr(message, "from_user", None)
+    user_id = parse_chat_id(getattr(user, "id", None))
+    if user_id is None:
+        raise RuntimeError("Source user id missing.")
+
+    topic_map_key = build_topic_map_key(source_group_id, user_id)
+    existing_topic_id = topic_map.get(topic_map_key)
+    if existing_topic_id is not None:
+        return existing_topic_id
+
+    forum_topic = await telegram_api_post(
+        "createForumTopic",
+        {
+            "chat_id": admin_chat_id,
+            "name": build_topic_title(user),
+        },
+    )
+    message_thread_id = int(forum_topic["message_thread_id"])
+    topic_map[topic_map_key] = message_thread_id
+    settings["user_topic_map"] = topic_map
+    save_settings(settings)
+    return message_thread_id
+
+
 async def log_incoming_update(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message = get_update_message(update)
     if not message:
@@ -269,7 +407,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await reply_text(
         update,
         context,
-        "QR image ke liye `qr` likho. Bot `images` folder ki files ko sequence order me bhejega. Chart image ke liye `chart` likho.",
+        "QR image ke liye `qr` likho. Bot `images` folder ki files ko sequence order me bhejega. Chart image ke liye `chart` likho.\n\nUser-wise private relay ke liye source group me `/setsourcegroup` aur bot ki private chat me `/setadminchat` likho.",
         parse_mode="Markdown",
     )
 
@@ -311,6 +449,50 @@ async def show_target_group(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     )
 
 
+async def show_source_group(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if is_quiet_hours():
+        return
+
+    source_group_id = get_source_group_id()
+    if source_group_id is None:
+        await reply_text(
+            update,
+            context,
+            "Abhi source group set nahi hai. `/setsourcegroup -1004304577201` ya source group ke andar `/setsourcegroup` likho.",
+            parse_mode="Markdown",
+        )
+        return
+
+    await reply_text(
+        update,
+        context,
+        f"Current source group ID: `{source_group_id}`",
+        parse_mode="Markdown",
+    )
+
+
+async def show_admin_chat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if is_quiet_hours():
+        return
+
+    admin_chat_id = get_admin_chat_id()
+    if admin_chat_id is None:
+        await reply_text(
+            update,
+            context,
+            "Abhi admin private chat set nahi hai. Bot ki private chat me `/setadminchat` likho.",
+            parse_mode="Markdown",
+        )
+        return
+
+    await reply_text(
+        update,
+        context,
+        f"Current admin chat ID: `{admin_chat_id}`",
+        parse_mode="Markdown",
+    )
+
+
 async def set_target_group(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if is_quiet_hours():
         return
@@ -344,6 +526,72 @@ async def set_target_group(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         update,
         context,
         f"Target group set ho gaya: `{target_group_id}`",
+        parse_mode="Markdown",
+    )
+
+
+async def set_source_group(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if is_quiet_hours():
+        return
+
+    message = get_update_message(update)
+    args = list(getattr(context, "args", []) or [])
+
+    source_group_id: int | None = None
+    if args:
+        source_group_id = parse_chat_id(args[0])
+    else:
+        chat = getattr(message, "chat", None)
+        chat_type = str(getattr(chat, "type", "") or "").lower()
+        if chat_type in {"group", "supergroup"}:
+            source_group_id = parse_chat_id(getattr(chat, "id", None))
+
+    if source_group_id is None:
+        await reply_text(
+            update,
+            context,
+            "Source group set karne ke liye `/setsourcegroup -1004304577201` likho ya source group ke andar `/setsourcegroup` likho.",
+            parse_mode="Markdown",
+        )
+        return
+
+    settings = load_settings()
+    settings["source_group_id"] = source_group_id
+    save_settings(settings)
+
+    await reply_text(
+        update,
+        context,
+        f"Source group set ho gaya: `{source_group_id}`",
+        parse_mode="Markdown",
+    )
+
+
+async def set_admin_chat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if is_quiet_hours():
+        return
+
+    message = get_update_message(update)
+    chat = getattr(message, "chat", None)
+    chat_type = str(getattr(chat, "type", "") or "").lower()
+    admin_chat_id = parse_chat_id(getattr(chat, "id", None))
+
+    if chat_type != "private" or admin_chat_id is None:
+        await reply_text(
+            update,
+            context,
+            "Ye command bot ki private chat me chalao. Wahin user-wise separate topics banenge.",
+        )
+        return
+
+    settings = load_settings()
+    settings["admin_chat_id"] = admin_chat_id
+    save_settings(settings)
+
+    await reply_text(
+        update,
+        context,
+        f"Admin private chat set ho gaya: `{admin_chat_id}`",
         parse_mode="Markdown",
     )
 
@@ -502,6 +750,47 @@ async def send_ds_ok(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
             save_chat_memory(memory)
 
 
+async def relay_source_group_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if is_quiet_hours():
+        return
+
+    source_group_id = get_source_group_id()
+    admin_chat_id = get_admin_chat_id()
+    if source_group_id is None or admin_chat_id is None:
+        return
+
+    message = get_update_message(update)
+    if not message:
+        return
+
+    chat_id = parse_chat_id(getattr(message, "chat_id", None))
+    if chat_id != source_group_id:
+        return
+
+    if not should_relay_group_message(message):
+        return
+
+    if getattr(message, "from_user", None) and getattr(message.from_user, "is_bot", False):
+        return
+
+    try:
+        topic_id = await get_or_create_user_topic(update, context, source_group_id, admin_chat_id)
+        await send_with_retry(
+            context.bot.forward_message,
+            chat_id=admin_chat_id,
+            from_chat_id=chat_id,
+            message_id=message.message_id,
+            message_thread_id=topic_id,
+        )
+    except Exception:
+        logger.exception(
+            "Could not relay source group message chat_id=%s message_id=%s to admin_chat_id=%s",
+            chat_id,
+            getattr(message, "message_id", None),
+            admin_chat_id,
+        )
+
+
 async def remember_recent_game_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message = get_update_message(update)
     text = str(getattr(message, "text", "") or "").strip()
@@ -546,6 +835,10 @@ def main() -> None:
     application.add_handler(CommandHandler("targetgroup", show_target_group))
     application.add_handler(CommandHandler("settargetgroup", set_target_group))
     application.add_handler(CommandHandler("cleartargetgroup", clear_target_group))
+    application.add_handler(CommandHandler("sourcegroup", show_source_group))
+    application.add_handler(CommandHandler("setsourcegroup", set_source_group))
+    application.add_handler(CommandHandler("adminchat", show_admin_chat))
+    application.add_handler(CommandHandler("setadminchat", set_admin_chat))
     application.add_handler(CommandHandler("chart", send_chart_image))
     application.add_handler(CommandHandler("qr", send_next_qr))
     application.add_handler(CommandHandler("total", send_game_total))
@@ -580,8 +873,12 @@ def main() -> None:
         )
     )
     application.add_handler(
-        MessageHandler(filters.TEXT & ~filters.COMMAND, remember_recent_game_message),
+        MessageHandler(filters.ALL & ~filters.COMMAND, relay_source_group_message),
         group=1,
+    )
+    application.add_handler(
+        MessageHandler(filters.TEXT & ~filters.COMMAND, remember_recent_game_message),
+        group=2,
     )
 
     webhook_url = os.getenv("WEBHOOK_URL")

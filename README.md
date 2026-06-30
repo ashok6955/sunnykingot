@@ -58,6 +58,8 @@ Render ka free web service use karke bot online rakh sakte hain. Free service id
 TELEGRAM_BOT_TOKEN=BotFather se mila token
 WEBHOOK_URL=https://aapka-render-service-url.onrender.com
 TARGET_GROUP_ID=-1004304577201
+SOURCE_GROUP_ID=-1004304577201
+ADMIN_CHAT_ID=123456789
 ```
 
 6. Deploy complete hone ke baad Telegram me bot ko `qr` bhejein.
@@ -100,6 +102,46 @@ Target group clear karne ke liye:
 ```text
 /cleartargetgroup
 ```
+
+Source group dekhne ke liye:
+
+```text
+/sourcegroup
+```
+
+Source group set karne ke 2 tareeqe hain:
+
+```text
+/setsourcegroup -1004304577201
+```
+
+Ya jis group ko source banana ho us group ke andar:
+
+```text
+/setsourcegroup
+```
+
+Admin private chat dekhne ke liye:
+
+```text
+/adminchat
+```
+
+Admin private chat set karne ke liye bot ki private chat me:
+
+```text
+/setadminchat
+```
+
+Iske baad bot sirf configured source group se user-wise separate private topics/threads me relay karega. Same user ke game message aur screenshot usi ek thread me aate rahenge.
+
+Relay rules:
+
+- Sirf configured source group se relay hoga
+- Sirf valid game-number text relay hoga
+- Photo ya image document screenshot relay hoga
+- Random normal text, video, aur non-image file relay nahi honge
+- Sender hidden nahi rahega; forwarded message me sender visible rahega
 
 `ds ok` likhne par bot recent saved game messages ko target group me as a bot text bhej dega aur pehle source chat me `DISAWAR GAME OK ✔` reply karega. Beech me image ya normal text aaye to woh ignore honge. Agar kisi specific game message ko bhejna ho to us message par reply karke `ds ok` likhein.
 
