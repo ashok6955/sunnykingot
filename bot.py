@@ -110,7 +110,7 @@ def load_settings() -> dict[str, int]:
 
     settings: dict[str, int | dict[str, int]] = {}
 
-    for key in ("target_group_id", "source_group_id", "admin_forum_group_id", "owner_user_id"):
+    for key in ("target_group_id", "source_group_id", "relay_chat_id", "admin_forum_group_id", "owner_user_id"):
         value = data.get(key)
         if isinstance(value, int):
             settings[key] = value
@@ -168,12 +168,18 @@ def get_source_group_id() -> int | None:
     return parse_chat_id(os.getenv("SOURCE_GROUP_ID"))
 
 
-def get_admin_forum_group_id() -> int | None:
+def get_relay_chat_id() -> int | None:
     settings = load_settings()
+    if "relay_chat_id" in settings:
+        return int(settings["relay_chat_id"])
     if "admin_forum_group_id" in settings:
         return int(settings["admin_forum_group_id"])
 
-    return parse_chat_id(os.getenv("ADMIN_FORUM_GROUP_ID")) or parse_chat_id(os.getenv("ADMIN_CHAT_ID"))
+    return (
+        parse_chat_id(os.getenv("RELAY_CHAT_ID"))
+        or parse_chat_id(os.getenv("ADMIN_FORUM_GROUP_ID"))
+        or parse_chat_id(os.getenv("ADMIN_CHAT_ID"))
+    )
 
 
 def get_owner_user_id() -> int | None:
@@ -182,18 +188,6 @@ def get_owner_user_id() -> int | None:
         return int(settings["owner_user_id"])
 
     return parse_chat_id(os.getenv("OWNER_USER_ID"))
-
-
-def get_user_topic_map(settings: dict[str, int | dict[str, int]] | None = None) -> dict[str, int]:
-    settings = settings or load_settings()
-    topic_map = settings.get("user_topic_map", {})
-    if isinstance(topic_map, dict):
-        return {str(key): int(value) for key, value in topic_map.items()}
-    return {}
-
-
-def build_topic_map_key(source_group_id: int, user_id: int) -> str:
-    return f"{source_group_id}:{user_id}"
 
 
 def get_recent_game_messages(memory: dict[str, list[str]], chat_id: int, limit: int = 10) -> list[str]:
@@ -281,19 +275,17 @@ async def telegram_api_post(method: str, payload: dict, files: dict | None = Non
     return data["result"]
 
 
-def build_topic_title(user) -> str:
+def build_user_label(user) -> str:
     first_name = str(getattr(user, "first_name", "") or "").strip()
     last_name = str(getattr(user, "last_name", "") or "").strip()
     username = str(getattr(user, "username", "") or "").strip()
 
-    title_base = " ".join(part for part in (first_name, last_name) if part).strip()
-    if not title_base and username:
-        title_base = f"@{username}"
-    if not title_base:
-        title_base = f"User {getattr(user, 'id', 'unknown')}"
-
-    topic_title = f"{title_base} | {getattr(user, 'id', '')}".strip()
-    return topic_title[:120]
+    base = " ".join(part for part in (first_name, last_name) if part).strip()
+    if username:
+        base = f"{base} (@{username})".strip() if base else f"@{username}"
+    if not base:
+        base = f"User {getattr(user, 'id', 'unknown')}"
+    return base[:120]
 
 
 def is_image_document(message) -> bool:
@@ -320,37 +312,16 @@ def should_relay_group_message(message) -> bool:
     return False
 
 
-async def get_or_create_user_topic(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-    source_group_id: int,
-    admin_forum_group_id: int,
-) -> int:
-    settings = load_settings()
-    topic_map = get_user_topic_map(settings)
-    message = get_update_message(update)
+def build_relay_header(message) -> str:
     user = getattr(message, "from_user", None)
-    user_id = parse_chat_id(getattr(user, "id", None))
-    if user_id is None:
-        raise RuntimeError("Source user id missing.")
-
-    topic_map_key = build_topic_map_key(source_group_id, user_id)
-    existing_topic_id = topic_map.get(topic_map_key)
-    if existing_topic_id is not None:
-        return existing_topic_id
-
-    forum_topic = await telegram_api_post(
-        "createForumTopic",
-        {
-            "chat_id": admin_forum_group_id,
-            "name": build_topic_title(user),
-        },
-    )
-    message_thread_id = int(forum_topic["message_thread_id"])
-    topic_map[topic_map_key] = message_thread_id
-    settings["user_topic_map"] = topic_map
-    save_settings(settings)
-    return message_thread_id
+    user_label = build_user_label(user)
+    user_id = getattr(user, "id", "unknown")
+    text = str(getattr(message, "text", "") or "").strip()
+    if text and looks_like_game_message(text):
+        item_type = "Game"
+    else:
+        item_type = "Screenshot"
+    return f"USER: {user_label}\nUSER ID: `{user_id}`\nTYPE: {item_type}"
 
 
 async def ensure_owner_access(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
@@ -429,7 +400,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await reply_text(
         update,
         context,
-        "QR image ke liye `qr` likho. Bot `images` folder ki files ko sequence order me bhejega. Chart image ke liye `chart` likho.\n\nUser-wise relay ke liye source group me `/setsourcegroup` aur admin forum group me `/setadminforum` likho.",
+        "QR image ke liye `qr` likho. Bot `images` folder ki files ko sequence order me bhejega. Chart image ke liye `chart` likho.\n\nUser-wise relay ke liye source group me `/setsourcegroup` aur receiving chat/group me `/setrelaychat` likho.",
         parse_mode="Markdown",
     )
 
@@ -493,16 +464,16 @@ async def show_source_group(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     )
 
 
-async def show_admin_forum(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def show_relay_chat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if is_quiet_hours():
         return
 
-    admin_forum_group_id = get_admin_forum_group_id()
-    if admin_forum_group_id is None:
+    relay_chat_id = get_relay_chat_id()
+    if relay_chat_id is None:
         await reply_text(
             update,
             context,
-            "Abhi admin forum group set nahi hai. Forum group ke andar `/setadminforum` likho.",
+            "Abhi relay chat set nahi hai. Receiving private chat/group ke andar `/setrelaychat` likho.",
             parse_mode="Markdown",
         )
         return
@@ -510,7 +481,7 @@ async def show_admin_forum(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     await reply_text(
         update,
         context,
-        f"Current admin forum group ID: `{admin_forum_group_id}`",
+        f"Current relay chat ID: `{relay_chat_id}`",
         parse_mode="Markdown",
     )
 
@@ -595,7 +566,7 @@ async def set_source_group(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     )
 
 
-async def set_admin_forum(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def set_relay_chat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if is_quiet_hours():
         return
 
@@ -604,26 +575,24 @@ async def set_admin_forum(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     message = get_update_message(update)
     chat = getattr(message, "chat", None)
-    chat_type = str(getattr(chat, "type", "") or "").lower()
-    admin_forum_group_id = parse_chat_id(getattr(chat, "id", None))
-    is_forum = bool(getattr(chat, "is_forum", False))
+    relay_chat_id = parse_chat_id(getattr(chat, "id", None))
 
-    if chat_type != "supergroup" or admin_forum_group_id is None or not is_forum:
+    if relay_chat_id is None:
         await reply_text(
             update,
             context,
-            "Ye command forum-enabled supergroup ke andar chalao. Wahin user-wise separate topics banenge.",
+            "Receiving private chat ya group ke andar ye command chalao.",
         )
         return
 
     settings = load_settings()
-    settings["admin_forum_group_id"] = admin_forum_group_id
+    settings["relay_chat_id"] = relay_chat_id
     save_settings(settings)
 
     await reply_text(
         update,
         context,
-        f"Admin forum group set ho gaya: `{admin_forum_group_id}`",
+        f"Relay chat set ho gaya: `{relay_chat_id}`",
         parse_mode="Markdown",
     )
 
@@ -790,8 +759,8 @@ async def relay_source_group_message(update: Update, context: ContextTypes.DEFAU
         return
 
     source_group_id = get_source_group_id()
-    admin_forum_group_id = get_admin_forum_group_id()
-    if source_group_id is None or admin_forum_group_id is None:
+    relay_chat_id = get_relay_chat_id()
+    if source_group_id is None or relay_chat_id is None:
         return
 
     message = get_update_message(update)
@@ -809,20 +778,24 @@ async def relay_source_group_message(update: Update, context: ContextTypes.DEFAU
         return
 
     try:
-        topic_id = await get_or_create_user_topic(update, context, source_group_id, admin_forum_group_id)
+        await send_with_retry(
+            context.bot.send_message,
+            chat_id=relay_chat_id,
+            text=build_relay_header(message),
+            parse_mode="Markdown",
+        )
         await send_with_retry(
             context.bot.forward_message,
-            chat_id=admin_forum_group_id,
+            chat_id=relay_chat_id,
             from_chat_id=chat_id,
             message_id=message.message_id,
-            message_thread_id=topic_id,
         )
     except Exception:
         logger.exception(
-            "Could not relay source group message chat_id=%s message_id=%s to admin_forum_group_id=%s",
+            "Could not relay source group message chat_id=%s message_id=%s to relay_chat_id=%s",
             chat_id,
             getattr(message, "message_id", None),
-            admin_forum_group_id,
+            relay_chat_id,
         )
 
 
@@ -872,8 +845,10 @@ def main() -> None:
     application.add_handler(CommandHandler("cleartargetgroup", clear_target_group))
     application.add_handler(CommandHandler("sourcegroup", show_source_group))
     application.add_handler(CommandHandler("setsourcegroup", set_source_group))
-    application.add_handler(CommandHandler("adminforum", show_admin_forum))
-    application.add_handler(CommandHandler("setadminforum", set_admin_forum))
+    application.add_handler(CommandHandler("relaychat", show_relay_chat))
+    application.add_handler(CommandHandler("adminforum", show_relay_chat))
+    application.add_handler(CommandHandler("setrelaychat", set_relay_chat))
+    application.add_handler(CommandHandler("setadminforum", set_relay_chat))
     application.add_handler(CommandHandler("chart", send_chart_image))
     application.add_handler(CommandHandler("qr", send_next_qr))
     application.add_handler(CommandHandler("total", send_game_total))
