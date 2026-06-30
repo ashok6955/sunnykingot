@@ -59,7 +59,8 @@ TELEGRAM_BOT_TOKEN=BotFather se mila token
 WEBHOOK_URL=https://aapka-render-service-url.onrender.com
 TARGET_GROUP_ID=-1004304577201
 SOURCE_GROUP_ID=-1004304577201
-ADMIN_CHAT_ID=123456789
+ADMIN_FORUM_GROUP_ID=-1004304577201
+OWNER_USER_ID=123456789
 ```
 
 6. Deploy complete hone ke baad Telegram me bot ko `qr` bhejein.
@@ -121,19 +122,19 @@ Ya jis group ko source banana ho us group ke andar:
 /setsourcegroup
 ```
 
-Admin private chat dekhne ke liye:
+Admin forum group dekhne ke liye:
 
 ```text
-/adminchat
+/adminforum
 ```
 
-Admin private chat set karne ke liye bot ki private chat me:
+Admin forum group set karne ke liye forum-enabled supergroup ke andar:
 
 ```text
-/setadminchat
+/setadminforum
 ```
 
-Iske baad bot sirf configured source group se user-wise separate private topics/threads me relay karega. Same user ke game message aur screenshot usi ek thread me aate rahenge.
+Iske baad bot sirf configured source group se user-wise separate forum topics/threads me relay karega. Same user ke game message aur screenshot usi ek thread me aate rahenge.
 
 Relay rules:
 
@@ -142,6 +143,7 @@ Relay rules:
 - Photo ya image document screenshot relay hoga
 - Random normal text, video, aur non-image file relay nahi honge
 - Sender hidden nahi rahega; forwarded message me sender visible rahega
+- Agar `OWNER_USER_ID` set hai to settings commands sirf owner hi chala sakega
 
 `ds ok` likhne par bot recent saved game messages ko target group me as a bot text bhej dega aur pehle source chat me `DISAWAR GAME OK ✔` reply karega. Beech me image ya normal text aaye to woh ignore honge. Agar kisi specific game message ko bhejna ho to us message par reply karke `ds ok` likhein.
 

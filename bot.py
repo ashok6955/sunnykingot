@@ -110,7 +110,7 @@ def load_settings() -> dict[str, int]:
 
     settings: dict[str, int | dict[str, int]] = {}
 
-    for key in ("target_group_id", "source_group_id", "admin_chat_id"):
+    for key in ("target_group_id", "source_group_id", "admin_forum_group_id", "owner_user_id"):
         value = data.get(key)
         if isinstance(value, int):
             settings[key] = value
@@ -168,12 +168,20 @@ def get_source_group_id() -> int | None:
     return parse_chat_id(os.getenv("SOURCE_GROUP_ID"))
 
 
-def get_admin_chat_id() -> int | None:
+def get_admin_forum_group_id() -> int | None:
     settings = load_settings()
-    if "admin_chat_id" in settings:
-        return int(settings["admin_chat_id"])
+    if "admin_forum_group_id" in settings:
+        return int(settings["admin_forum_group_id"])
 
-    return parse_chat_id(os.getenv("ADMIN_CHAT_ID"))
+    return parse_chat_id(os.getenv("ADMIN_FORUM_GROUP_ID")) or parse_chat_id(os.getenv("ADMIN_CHAT_ID"))
+
+
+def get_owner_user_id() -> int | None:
+    settings = load_settings()
+    if "owner_user_id" in settings:
+        return int(settings["owner_user_id"])
+
+    return parse_chat_id(os.getenv("OWNER_USER_ID"))
 
 
 def get_user_topic_map(settings: dict[str, int | dict[str, int]] | None = None) -> dict[str, int]:
@@ -316,7 +324,7 @@ async def get_or_create_user_topic(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     source_group_id: int,
-    admin_chat_id: int,
+    admin_forum_group_id: int,
 ) -> int:
     settings = load_settings()
     topic_map = get_user_topic_map(settings)
@@ -334,7 +342,7 @@ async def get_or_create_user_topic(
     forum_topic = await telegram_api_post(
         "createForumTopic",
         {
-            "chat_id": admin_chat_id,
+            "chat_id": admin_forum_group_id,
             "name": build_topic_title(user),
         },
     )
@@ -343,6 +351,20 @@ async def get_or_create_user_topic(
     settings["user_topic_map"] = topic_map
     save_settings(settings)
     return message_thread_id
+
+
+async def ensure_owner_access(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    owner_user_id = get_owner_user_id()
+    if owner_user_id is None:
+        return True
+
+    message = get_update_message(update)
+    user_id = parse_chat_id(getattr(getattr(message, "from_user", None), "id", None))
+    if user_id == owner_user_id:
+        return True
+
+    await reply_text(update, context, "Ye settings command sirf owner chala sakta hai.")
+    return False
 
 
 async def log_incoming_update(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -407,7 +429,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await reply_text(
         update,
         context,
-        "QR image ke liye `qr` likho. Bot `images` folder ki files ko sequence order me bhejega. Chart image ke liye `chart` likho.\n\nUser-wise private relay ke liye source group me `/setsourcegroup` aur bot ki private chat me `/setadminchat` likho.",
+        "QR image ke liye `qr` likho. Bot `images` folder ki files ko sequence order me bhejega. Chart image ke liye `chart` likho.\n\nUser-wise relay ke liye source group me `/setsourcegroup` aur admin forum group me `/setadminforum` likho.",
         parse_mode="Markdown",
     )
 
@@ -471,16 +493,16 @@ async def show_source_group(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     )
 
 
-async def show_admin_chat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def show_admin_forum(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if is_quiet_hours():
         return
 
-    admin_chat_id = get_admin_chat_id()
-    if admin_chat_id is None:
+    admin_forum_group_id = get_admin_forum_group_id()
+    if admin_forum_group_id is None:
         await reply_text(
             update,
             context,
-            "Abhi admin private chat set nahi hai. Bot ki private chat me `/setadminchat` likho.",
+            "Abhi admin forum group set nahi hai. Forum group ke andar `/setadminforum` likho.",
             parse_mode="Markdown",
         )
         return
@@ -488,13 +510,16 @@ async def show_admin_chat(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     await reply_text(
         update,
         context,
-        f"Current admin chat ID: `{admin_chat_id}`",
+        f"Current admin forum group ID: `{admin_forum_group_id}`",
         parse_mode="Markdown",
     )
 
 
 async def set_target_group(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if is_quiet_hours():
+        return
+
+    if not await ensure_owner_access(update, context):
         return
 
     message = get_update_message(update)
@@ -534,6 +559,9 @@ async def set_source_group(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     if is_quiet_hours():
         return
 
+    if not await ensure_owner_access(update, context):
+        return
+
     message = get_update_message(update)
     args = list(getattr(context, "args", []) or [])
 
@@ -567,37 +595,44 @@ async def set_source_group(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     )
 
 
-async def set_admin_chat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def set_admin_forum(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if is_quiet_hours():
+        return
+
+    if not await ensure_owner_access(update, context):
         return
 
     message = get_update_message(update)
     chat = getattr(message, "chat", None)
     chat_type = str(getattr(chat, "type", "") or "").lower()
-    admin_chat_id = parse_chat_id(getattr(chat, "id", None))
+    admin_forum_group_id = parse_chat_id(getattr(chat, "id", None))
+    is_forum = bool(getattr(chat, "is_forum", False))
 
-    if chat_type != "private" or admin_chat_id is None:
+    if chat_type != "supergroup" or admin_forum_group_id is None or not is_forum:
         await reply_text(
             update,
             context,
-            "Ye command bot ki private chat me chalao. Wahin user-wise separate topics banenge.",
+            "Ye command forum-enabled supergroup ke andar chalao. Wahin user-wise separate topics banenge.",
         )
         return
 
     settings = load_settings()
-    settings["admin_chat_id"] = admin_chat_id
+    settings["admin_forum_group_id"] = admin_forum_group_id
     save_settings(settings)
 
     await reply_text(
         update,
         context,
-        f"Admin private chat set ho gaya: `{admin_chat_id}`",
+        f"Admin forum group set ho gaya: `{admin_forum_group_id}`",
         parse_mode="Markdown",
     )
 
 
 async def clear_target_group(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if is_quiet_hours():
+        return
+
+    if not await ensure_owner_access(update, context):
         return
 
     settings = load_settings()
@@ -755,8 +790,8 @@ async def relay_source_group_message(update: Update, context: ContextTypes.DEFAU
         return
 
     source_group_id = get_source_group_id()
-    admin_chat_id = get_admin_chat_id()
-    if source_group_id is None or admin_chat_id is None:
+    admin_forum_group_id = get_admin_forum_group_id()
+    if source_group_id is None or admin_forum_group_id is None:
         return
 
     message = get_update_message(update)
@@ -774,20 +809,20 @@ async def relay_source_group_message(update: Update, context: ContextTypes.DEFAU
         return
 
     try:
-        topic_id = await get_or_create_user_topic(update, context, source_group_id, admin_chat_id)
+        topic_id = await get_or_create_user_topic(update, context, source_group_id, admin_forum_group_id)
         await send_with_retry(
             context.bot.forward_message,
-            chat_id=admin_chat_id,
+            chat_id=admin_forum_group_id,
             from_chat_id=chat_id,
             message_id=message.message_id,
             message_thread_id=topic_id,
         )
     except Exception:
         logger.exception(
-            "Could not relay source group message chat_id=%s message_id=%s to admin_chat_id=%s",
+            "Could not relay source group message chat_id=%s message_id=%s to admin_forum_group_id=%s",
             chat_id,
             getattr(message, "message_id", None),
-            admin_chat_id,
+            admin_forum_group_id,
         )
 
 
@@ -837,8 +872,8 @@ def main() -> None:
     application.add_handler(CommandHandler("cleartargetgroup", clear_target_group))
     application.add_handler(CommandHandler("sourcegroup", show_source_group))
     application.add_handler(CommandHandler("setsourcegroup", set_source_group))
-    application.add_handler(CommandHandler("adminchat", show_admin_chat))
-    application.add_handler(CommandHandler("setadminchat", set_admin_chat))
+    application.add_handler(CommandHandler("adminforum", show_admin_forum))
+    application.add_handler(CommandHandler("setadminforum", set_admin_forum))
     application.add_handler(CommandHandler("chart", send_chart_image))
     application.add_handler(CommandHandler("qr", send_next_qr))
     application.add_handler(CommandHandler("total", send_game_total))
