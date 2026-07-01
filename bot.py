@@ -481,28 +481,14 @@ def is_image_document(message) -> bool:
 
 def should_relay_group_message(message) -> bool:
     text = str(getattr(message, "text", "") or "").strip()
-    if text and looks_like_game_message(text):
-        return True
-
-    if getattr(message, "photo", None):
-        return True
-
-    if is_image_document(message):
-        return True
-
-    return False
+    return bool(text and looks_like_game_message(text))
 
 
 def build_relay_header(message) -> str:
     user = getattr(message, "from_user", None)
     user_label = build_user_label(user)
     user_id = getattr(user, "id", "unknown")
-    text = str(getattr(message, "text", "") or "").strip()
-    if text and looks_like_game_message(text):
-        item_type = "Game"
-    else:
-        item_type = "Screenshot"
-    return f"USER: {user_label}\nUSER ID: `{user_id}`\nTYPE: {item_type}"
+    return f"USER: {user_label}\nUSER ID: `{user_id}`"
 
 
 def build_relay_user_key(source_group_id: int, user_id: int) -> str:
@@ -511,30 +497,20 @@ def build_relay_user_key(source_group_id: int, user_id: int) -> str:
 
 def build_relay_item_text(message) -> str:
     text = str(getattr(message, "text", "") or "").strip()
-    if text and looks_like_game_message(text):
-        normalized_text = " ".join(line.strip() for line in text.splitlines() if line.strip())
-        return f"[GAME] {normalized_text}"
-
-    caption = str(getattr(message, "caption", "") or "").strip()
-    if caption:
-        normalized_caption = " ".join(line.strip() for line in caption.splitlines() if line.strip())
-        return f"[SCREENSHOT] {normalized_caption}"
-
-    return "[SCREENSHOT] Screenshot received"
+    normalized_text = " | ".join(line.strip() for line in text.splitlines() if line.strip())
+    return normalized_text
 
 
 def get_relay_item_kind(message) -> str:
-    text = str(getattr(message, "text", "") or "").strip()
-    if text and looks_like_game_message(text):
-        return "game"
-    return "screenshot"
+    del message
+    return "game"
 
 
 def build_relay_summary_text(user_label: str, user_id: int, entries: list[str]) -> str:
+    del user_id
     header_lines = [
-        f"USER: {user_label}",
-        f"USER ID: `{user_id}`",
-        f"TOTAL ITEMS: {len(entries)}",
+        f"{user_label}",
+        f"Games: {len(entries)}",
         "",
     ]
     body_lines = [f"{index}. {entry}" for index, entry in enumerate(entries, start=1)]
@@ -1033,7 +1009,6 @@ async def relay_source_group_message(update: Update, context: ContextTypes.DEFAU
                 "user_label": build_user_label(user),
                 "user_id": user_id,
                 "entries": [],
-                "pending_screenshots": [],
             },
         )
 
@@ -1042,43 +1017,9 @@ async def relay_source_group_message(update: Update, context: ContextTypes.DEFAU
         existing_entries = relay_entry.get("entries", [])
         if not isinstance(existing_entries, list):
             existing_entries = []
-        pending_screenshots = relay_entry.get("pending_screenshots", [])
-        if not isinstance(pending_screenshots, list):
-            pending_screenshots = []
-        item_kind = get_relay_item_kind(message)
-        has_game_history = any(str(entry).startswith("[GAME]") for entry in existing_entries)
         item_text = build_relay_item_text(message)
-
-        screenshots_to_forward: list[int] = []
-
-        if item_kind == "screenshot" and not has_game_history:
-            pending_screenshots.append(
-                {
-                    "message_id": int(message.message_id),
-                    "entry_text": item_text,
-                }
-            )
-            relay_entry["pending_screenshots"] = pending_screenshots[-50:]
-            relay_state[relay_key] = relay_entry
-            save_relay_state(relay_state)
-            return
-
         existing_entries.append(item_text)
-
-        if item_kind == "game" and pending_screenshots:
-            for pending_item in pending_screenshots:
-                pending_entry_text = str(pending_item.get("entry_text", "") or "").strip() or "[SCREENSHOT] Screenshot received"
-                existing_entries.append(pending_entry_text)
-                pending_message_id = parse_chat_id(pending_item.get("message_id"))
-                if pending_message_id is not None:
-                    screenshots_to_forward.append(int(pending_message_id))
-            pending_screenshots = []
-
-        if item_kind == "screenshot":
-            screenshots_to_forward.append(int(message.message_id))
-
         relay_entry["entries"] = [str(item).strip() for item in existing_entries if str(item).strip()][-200:]
-        relay_entry["pending_screenshots"] = pending_screenshots[-50:]
 
         summary_text = build_relay_summary_text(
             str(relay_entry["user_label"]),
@@ -1112,14 +1053,6 @@ async def relay_source_group_message(update: Update, context: ContextTypes.DEFAU
                 parse_mode="Markdown",
             )
             relay_entry["message_id"] = sent_message.message_id
-
-        for screenshot_message_id in screenshots_to_forward:
-            await send_with_retry(
-                context.bot.forward_message,
-                chat_id=relay_chat_id,
-                from_chat_id=chat_id,
-                message_id=screenshot_message_id,
-            )
 
         relay_state[relay_key] = relay_entry
         save_relay_state(relay_state)
