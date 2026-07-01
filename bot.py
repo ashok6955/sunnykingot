@@ -21,6 +21,7 @@ CHART_IMAGE_DIR = BASE_DIR / "chart_image"
 STATE_FILE = BASE_DIR / "state.json"
 CHAT_MEMORY_FILE = BASE_DIR / "chat_memory.json"
 SETTINGS_FILE = BASE_DIR / "bot_settings.json"
+RELAY_STATE_FILE = BASE_DIR / "relay_state.json"
 SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 BOT_TIMEZONE = ZoneInfo("Asia/Kolkata")
 QUIET_HOURS_START = time(4, 0)
@@ -91,6 +92,47 @@ def load_chat_memory() -> dict[str, list[str]]:
 def save_chat_memory(memory: dict[str, list[str]]) -> None:
     CHAT_MEMORY_FILE.write_text(
         json.dumps(memory, indent=2, sort_keys=True, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+
+def load_relay_state() -> dict[str, dict[str, int | str | list[str]]]:
+    if not RELAY_STATE_FILE.exists():
+        return {}
+
+    try:
+        data = json.loads(RELAY_STATE_FILE.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        logger.warning("Could not read relay state file. Starting with empty relay state.")
+        return {}
+
+    if not isinstance(data, dict):
+        return {}
+
+    relay_state: dict[str, dict[str, int | str | list[str]]] = {}
+    for relay_key, relay_value in data.items():
+        if not isinstance(relay_key, str) or not isinstance(relay_value, dict):
+            continue
+
+        message_id = parse_chat_id(relay_value.get("message_id"))
+        user_label = str(relay_value.get("user_label", "") or "").strip()
+        user_id = parse_chat_id(relay_value.get("user_id"))
+        entries_raw = relay_value.get("entries", [])
+        entries = [str(item).strip() for item in entries_raw if str(item).strip()] if isinstance(entries_raw, list) else []
+
+        relay_state[relay_key] = {
+            "message_id": int(message_id or 0),
+            "user_label": user_label,
+            "user_id": int(user_id or 0),
+            "entries": entries[-200:],
+        }
+
+    return relay_state
+
+
+def save_relay_state(relay_state: dict[str, dict[str, int | str | list[str]]]) -> None:
+    RELAY_STATE_FILE.write_text(
+        json.dumps(relay_state, indent=2, sort_keys=True, ensure_ascii=False),
         encoding="utf-8",
     )
 
@@ -322,6 +364,59 @@ def build_relay_header(message) -> str:
     else:
         item_type = "Screenshot"
     return f"USER: {user_label}\nUSER ID: `{user_id}`\nTYPE: {item_type}"
+
+
+def build_relay_user_key(source_group_id: int, user_id: int) -> str:
+    return f"{source_group_id}:{user_id}"
+
+
+def build_relay_item_text(message) -> str:
+    text = str(getattr(message, "text", "") or "").strip()
+    if text and looks_like_game_message(text):
+        normalized_text = " ".join(line.strip() for line in text.splitlines() if line.strip())
+        return f"[GAME] {normalized_text}"
+
+    caption = str(getattr(message, "caption", "") or "").strip()
+    if caption:
+        normalized_caption = " ".join(line.strip() for line in caption.splitlines() if line.strip())
+        return f"[SCREENSHOT] {normalized_caption}"
+
+    return "[SCREENSHOT] Screenshot received"
+
+
+def build_relay_summary_text(user_label: str, user_id: int, entries: list[str]) -> str:
+    header_lines = [
+        f"USER: {user_label}",
+        f"USER ID: `{user_id}`",
+        f"TOTAL ITEMS: {len(entries)}",
+        "",
+    ]
+    body_lines = [f"{index}. {entry}" for index, entry in enumerate(entries, start=1)]
+    max_length = 3800
+
+    visible_lines: list[str] = []
+    total_hidden = 0
+    for reverse_index, line in enumerate(reversed(body_lines), start=1):
+        candidate_lines = list(reversed(visible_lines + [line]))
+        hidden_count = max(len(body_lines) - len(candidate_lines), 0)
+        prefix_lines = header_lines.copy()
+        if hidden_count:
+            prefix_lines.append(f"... older {hidden_count} items hidden ...")
+            prefix_lines.append("")
+        candidate_text = "\n".join(prefix_lines + candidate_lines)
+        if len(candidate_text) > max_length:
+            total_hidden = hidden_count + 1
+            break
+        visible_lines.append(line)
+        total_hidden = hidden_count
+
+    final_body = list(reversed(visible_lines))
+    final_lines = header_lines.copy()
+    if total_hidden:
+        final_lines.append(f"... older {total_hidden} items hidden ...")
+        final_lines.append("")
+    final_lines.extend(final_body)
+    return "\n".join(final_lines)
 
 
 async def ensure_owner_access(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
@@ -778,18 +873,66 @@ async def relay_source_group_message(update: Update, context: ContextTypes.DEFAU
         return
 
     try:
-        await send_with_retry(
-            context.bot.send_message,
-            chat_id=relay_chat_id,
-            text=build_relay_header(message),
-            parse_mode="Markdown",
+        user = getattr(message, "from_user", None)
+        user_id = parse_chat_id(getattr(user, "id", None))
+        if user_id is None:
+            return
+
+        relay_state = load_relay_state()
+        relay_key = build_relay_user_key(source_group_id, user_id)
+        relay_entry = relay_state.get(
+            relay_key,
+            {
+                "message_id": 0,
+                "user_label": build_user_label(user),
+                "user_id": user_id,
+                "entries": [],
+            },
         )
-        await send_with_retry(
-            context.bot.forward_message,
-            chat_id=relay_chat_id,
-            from_chat_id=chat_id,
-            message_id=message.message_id,
+
+        relay_entry["user_label"] = build_user_label(user)
+        relay_entry["user_id"] = user_id
+        existing_entries = relay_entry.get("entries", [])
+        if not isinstance(existing_entries, list):
+            existing_entries = []
+        existing_entries.append(build_relay_item_text(message))
+        relay_entry["entries"] = [str(item).strip() for item in existing_entries if str(item).strip()][-200:]
+
+        summary_text = build_relay_summary_text(
+            str(relay_entry["user_label"]),
+            int(relay_entry["user_id"]),
+            list(relay_entry["entries"]),
         )
+
+        message_id = parse_chat_id(relay_entry.get("message_id"))
+        if message_id:
+            try:
+                await send_with_retry(
+                    context.bot.edit_message_text,
+                    chat_id=relay_chat_id,
+                    message_id=message_id,
+                    text=summary_text,
+                    parse_mode="Markdown",
+                )
+            except Exception:
+                sent_message = await send_with_retry(
+                    context.bot.send_message,
+                    chat_id=relay_chat_id,
+                    text=summary_text,
+                    parse_mode="Markdown",
+                )
+                relay_entry["message_id"] = sent_message.message_id
+        else:
+            sent_message = await send_with_retry(
+                context.bot.send_message,
+                chat_id=relay_chat_id,
+                text=summary_text,
+                parse_mode="Markdown",
+            )
+            relay_entry["message_id"] = sent_message.message_id
+
+        relay_state[relay_key] = relay_entry
+        save_relay_state(relay_state)
     except Exception:
         logger.exception(
             "Could not relay source group message chat_id=%s message_id=%s to relay_chat_id=%s",

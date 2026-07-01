@@ -137,7 +137,7 @@ Relay chat set karne ke liye receiving private chat ya group ke andar:
 
 Compatibility ke liye `/adminforum` aur `/setadminforum` bhi kaam karte rahenge.
 
-Iske baad bot sirf configured source group se receiving private chat/group me relay karega. Same user ke game message aur screenshot user-heading ke saath list ki form me aate rahenge.
+Iske baad bot sirf configured source group se receiving private chat/group me relay karega. Har user ki ek alag editable list banegi. Same user ki nayi game ya screenshot usi list message me add hoti rahegi.
 
 Relay rules:
 
@@ -145,7 +145,8 @@ Relay rules:
 - Sirf valid game-number text relay hoga
 - Photo ya image document screenshot relay hoga
 - Random normal text, video, aur non-image file relay nahi honge
-- Sender hidden nahi rahega; forwarded message me sender visible rahega
+- Har user ka alag master list message banega
+- Same user ki nayi entries usi list message me update hongi
 - Supergroup/topics ki zaroorat nahi hai
 - Agar `OWNER_USER_ID` set hai to settings commands sirf owner hi chala sakega
 
