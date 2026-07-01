@@ -8,7 +8,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import httpx
-from telegram import Update
+from telegram import ChatPermissions, Update
 from telegram.error import TimedOut
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, TypeHandler, filters
 
@@ -22,10 +22,11 @@ STATE_FILE = BASE_DIR / "state.json"
 CHAT_MEMORY_FILE = BASE_DIR / "chat_memory.json"
 SETTINGS_FILE = BASE_DIR / "bot_settings.json"
 RELAY_STATE_FILE = BASE_DIR / "relay_state.json"
+GROUP_LOCK_STATE_FILE = BASE_DIR / "group_lock_state.json"
 SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 BOT_TIMEZONE = ZoneInfo("Asia/Kolkata")
 QUIET_HOURS_START = time(4, 0)
-QUIET_HOURS_END = time(6, 0)
+QUIET_HOURS_END = time(5, 20)
 
 
 logging.basicConfig(
@@ -36,6 +37,7 @@ logger = logging.getLogger(__name__)
 
 
 state_lock = asyncio.Lock()
+group_lock_task: asyncio.Task | None = None
 
 
 def natural_sort_key(file_path: Path) -> list[int | str]:
@@ -96,7 +98,7 @@ def save_chat_memory(memory: dict[str, list[str]]) -> None:
     )
 
 
-def load_relay_state() -> dict[str, dict[str, int | str | list[str]]]:
+def load_relay_state() -> dict[str, dict[str, int | str | list[str] | list[dict[str, int | str]]]]:
     if not RELAY_STATE_FILE.exists():
         return {}
 
@@ -109,7 +111,7 @@ def load_relay_state() -> dict[str, dict[str, int | str | list[str]]]:
     if not isinstance(data, dict):
         return {}
 
-    relay_state: dict[str, dict[str, int | str | list[str]]] = {}
+    relay_state: dict[str, dict[str, int | str | list[str] | list[dict[str, int | str]]]] = {}
     for relay_key, relay_value in data.items():
         if not isinstance(relay_key, str) or not isinstance(relay_value, dict):
             continue
@@ -119,20 +121,60 @@ def load_relay_state() -> dict[str, dict[str, int | str | list[str]]]:
         user_id = parse_chat_id(relay_value.get("user_id"))
         entries_raw = relay_value.get("entries", [])
         entries = [str(item).strip() for item in entries_raw if str(item).strip()] if isinstance(entries_raw, list) else []
+        pending_raw = relay_value.get("pending_screenshots", [])
+        pending_screenshots: list[dict[str, int | str]] = []
+        if isinstance(pending_raw, list):
+            for pending_item in pending_raw:
+                if not isinstance(pending_item, dict):
+                    continue
+                pending_message_id = parse_chat_id(pending_item.get("message_id"))
+                pending_entry_text = str(pending_item.get("entry_text", "") or "").strip()
+                if pending_message_id is None:
+                    continue
+                pending_screenshots.append(
+                    {
+                        "message_id": int(pending_message_id),
+                        "entry_text": pending_entry_text or "[SCREENSHOT] Screenshot received",
+                    }
+                )
 
         relay_state[relay_key] = {
             "message_id": int(message_id or 0),
             "user_label": user_label,
             "user_id": int(user_id or 0),
             "entries": entries[-200:],
+            "pending_screenshots": pending_screenshots[-50:],
         }
 
     return relay_state
 
 
-def save_relay_state(relay_state: dict[str, dict[str, int | str | list[str]]]) -> None:
+def save_relay_state(relay_state: dict[str, dict[str, int | str | list[str] | list[dict[str, int | str]]]]) -> None:
     RELAY_STATE_FILE.write_text(
         json.dumps(relay_state, indent=2, sort_keys=True, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+
+def load_group_lock_state() -> dict[str, str]:
+    if not GROUP_LOCK_STATE_FILE.exists():
+        return {}
+
+    try:
+        data = json.loads(GROUP_LOCK_STATE_FILE.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        logger.warning("Could not read group lock state file. Starting with empty lock state.")
+        return {}
+
+    if not isinstance(data, dict):
+        return {}
+
+    return {str(key): str(value) for key, value in data.items() if isinstance(key, str)}
+
+
+def save_group_lock_state(lock_state: dict[str, str]) -> None:
+    GROUP_LOCK_STATE_FILE.write_text(
+        json.dumps(lock_state, indent=2, sort_keys=True, ensure_ascii=False),
         encoding="utf-8",
     )
 
@@ -235,6 +277,103 @@ def get_owner_user_id() -> int | None:
 def get_recent_game_messages(memory: dict[str, list[str]], chat_id: int, limit: int = 10) -> list[str]:
     messages = memory.get(str(chat_id), [])
     return [message for message in messages if message.strip()][-limit:]
+
+
+def build_locked_permissions() -> ChatPermissions:
+    return ChatPermissions(
+        can_send_messages=False,
+    )
+
+
+def build_unlocked_permissions() -> ChatPermissions:
+    return ChatPermissions(
+        can_send_messages=True,
+        can_send_audios=True,
+        can_send_documents=True,
+        can_send_photos=True,
+        can_send_videos=True,
+        can_send_video_notes=True,
+        can_send_voice_notes=True,
+        can_send_polls=True,
+        can_send_other_messages=True,
+        can_add_web_page_previews=True,
+        can_change_info=False,
+        can_invite_users=False,
+        can_pin_messages=False,
+        can_manage_topics=False,
+    )
+
+
+async def apply_source_group_lock(bot, source_group_id: int, lock_group: bool) -> None:
+    permissions = build_locked_permissions() if lock_group else build_unlocked_permissions()
+    await bot.set_chat_permissions(
+        chat_id=source_group_id,
+        permissions=permissions,
+        use_independent_chat_permissions=True,
+    )
+
+
+async def enforce_source_group_lock(bot) -> None:
+    source_group_id = get_source_group_id()
+    if source_group_id is None:
+        return
+
+    now = datetime.now(BOT_TIMEZONE)
+    today_key = now.strftime("%Y-%m-%d")
+    current_time = now.time()
+    lock_state = load_group_lock_state()
+    last_locked_date = lock_state.get("last_locked_date", "")
+    last_unlocked_date = lock_state.get("last_unlocked_date", "")
+
+    if QUIET_HOURS_START <= current_time < QUIET_HOURS_END:
+        if last_locked_date == today_key:
+            return
+        await apply_source_group_lock(bot, source_group_id, True)
+        lock_state["last_locked_date"] = today_key
+        save_group_lock_state(lock_state)
+        logger.info("Source group locked automatically for date=%s chat_id=%s", today_key, source_group_id)
+        return
+
+    if current_time >= QUIET_HOURS_END and last_unlocked_date == today_key:
+        return
+
+    await apply_source_group_lock(bot, source_group_id, False)
+    lock_state["last_unlocked_date"] = today_key
+    save_group_lock_state(lock_state)
+    logger.info("Source group unlocked automatically for date=%s chat_id=%s", today_key, source_group_id)
+
+
+async def source_group_lock_worker(application: Application) -> None:
+    while True:
+        try:
+            await enforce_source_group_lock(application.bot)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Automatic source group lock worker failed.")
+        await asyncio.sleep(30)
+
+
+async def on_application_start(application: Application) -> None:
+    global group_lock_task
+
+    await enforce_source_group_lock(application.bot)
+    group_lock_task = application.create_task(source_group_lock_worker(application))
+
+
+async def on_application_shutdown(application: Application) -> None:
+    del application
+    global group_lock_task
+
+    if group_lock_task is None:
+        return
+
+    group_lock_task.cancel()
+    try:
+        await group_lock_task
+    except asyncio.CancelledError:
+        pass
+    group_lock_task = None
 
 
 def get_images() -> list[Path]:
@@ -382,6 +521,13 @@ def build_relay_item_text(message) -> str:
         return f"[SCREENSHOT] {normalized_caption}"
 
     return "[SCREENSHOT] Screenshot received"
+
+
+def get_relay_item_kind(message) -> str:
+    text = str(getattr(message, "text", "") or "").strip()
+    if text and looks_like_game_message(text):
+        return "game"
+    return "screenshot"
 
 
 def build_relay_summary_text(user_label: str, user_id: int, entries: list[str]) -> str:
@@ -887,6 +1033,7 @@ async def relay_source_group_message(update: Update, context: ContextTypes.DEFAU
                 "user_label": build_user_label(user),
                 "user_id": user_id,
                 "entries": [],
+                "pending_screenshots": [],
             },
         )
 
@@ -895,8 +1042,43 @@ async def relay_source_group_message(update: Update, context: ContextTypes.DEFAU
         existing_entries = relay_entry.get("entries", [])
         if not isinstance(existing_entries, list):
             existing_entries = []
-        existing_entries.append(build_relay_item_text(message))
+        pending_screenshots = relay_entry.get("pending_screenshots", [])
+        if not isinstance(pending_screenshots, list):
+            pending_screenshots = []
+        item_kind = get_relay_item_kind(message)
+        has_game_history = any(str(entry).startswith("[GAME]") for entry in existing_entries)
+        item_text = build_relay_item_text(message)
+
+        screenshots_to_forward: list[int] = []
+
+        if item_kind == "screenshot" and not has_game_history:
+            pending_screenshots.append(
+                {
+                    "message_id": int(message.message_id),
+                    "entry_text": item_text,
+                }
+            )
+            relay_entry["pending_screenshots"] = pending_screenshots[-50:]
+            relay_state[relay_key] = relay_entry
+            save_relay_state(relay_state)
+            return
+
+        existing_entries.append(item_text)
+
+        if item_kind == "game" and pending_screenshots:
+            for pending_item in pending_screenshots:
+                pending_entry_text = str(pending_item.get("entry_text", "") or "").strip() or "[SCREENSHOT] Screenshot received"
+                existing_entries.append(pending_entry_text)
+                pending_message_id = parse_chat_id(pending_item.get("message_id"))
+                if pending_message_id is not None:
+                    screenshots_to_forward.append(int(pending_message_id))
+            pending_screenshots = []
+
+        if item_kind == "screenshot":
+            screenshots_to_forward.append(int(message.message_id))
+
         relay_entry["entries"] = [str(item).strip() for item in existing_entries if str(item).strip()][-200:]
+        relay_entry["pending_screenshots"] = pending_screenshots[-50:]
 
         summary_text = build_relay_summary_text(
             str(relay_entry["user_label"]),
@@ -930,6 +1112,14 @@ async def relay_source_group_message(update: Update, context: ContextTypes.DEFAU
                 parse_mode="Markdown",
             )
             relay_entry["message_id"] = sent_message.message_id
+
+        for screenshot_message_id in screenshots_to_forward:
+            await send_with_retry(
+                context.bot.forward_message,
+                chat_id=relay_chat_id,
+                from_chat_id=chat_id,
+                message_id=screenshot_message_id,
+            )
 
         relay_state[relay_key] = relay_entry
         save_relay_state(relay_state)
@@ -975,6 +1165,8 @@ def main() -> None:
         .read_timeout(30)
         .write_timeout(30)
         .pool_timeout(30)
+        .post_init(on_application_start)
+        .post_shutdown(on_application_shutdown)
         .build()
     )
 

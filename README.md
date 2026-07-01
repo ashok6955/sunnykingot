@@ -28,7 +28,8 @@ Images filename ke alphabetical order me send hongi. Isliye `01.png`, `02.png`, 
 
 Current setup me `images` folder ki files `01` se `43` tak sequence me renamed hain, isliye bot ab unhe isi fixed order me bhejega.
 
-Bot daily subah `4:00 AM` se `6:00 AM` tak `Asia/Kolkata` time ke hisaab se kaam nahi karega.
+Bot daily subah `4:00 AM` se `5:20 AM` tak `Asia/Kolkata` time ke hisaab se kaam nahi karega.
+Configured source group ko bot daily subah `4:00 AM` par auto-lock aur `5:20 AM` par auto-unlock bhi karega, agar bot us group me admin hoke chat permissions manage kar sakta ho.
 
 Chart image ke liye ek fixed image yahan add karein:
 
@@ -137,13 +138,15 @@ Relay chat set karne ke liye receiving private chat ya group ke andar:
 
 Compatibility ke liye `/adminforum` aur `/setadminforum` bhi kaam karte rahenge.
 
-Iske baad bot sirf configured source group se receiving private chat/group me relay karega. Har user ki ek alag editable list banegi. Same user ki nayi game ya screenshot usi list message me add hoti rahegi.
+Iske baad bot sirf configured source group se receiving private chat/group me relay karega. Har user ki ek alag editable list banegi. Same user ki nayi game ya screenshot usi list message me add hoti rahegi. Screenshot ki actual image bhi relay hogi. Agar screenshot pehle aa jaye aur game baad me aaye, to bot pehle game add karega aur phir pending screenshot ko release karega.
 
 Relay rules:
 
 - Sirf configured source group se relay hoga
 - Sirf valid game-number text relay hoga
 - Photo ya image document screenshot relay hoga
+- Agar screenshot game se pehle aaye to wo pending rahega
+- Us user ki game aate hi pehle game add hogi, phir pending screenshot add/forward hogi
 - Random normal text, video, aur non-image file relay nahi honge
 - Har user ka alag master list message banega
 - Same user ki nayi entries usi list message me update hongi
