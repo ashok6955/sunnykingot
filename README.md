@@ -149,6 +149,7 @@ Relay rules:
 - Har user ka alag master list message banega
 - Same user ki nayi entries usi list message me update hongi
 - List format simple hoga: user name, `Games: N`, aur numbered game lines
+- Har numbered game line ke beech blank line rahegi
 - Supergroup/topics ki zaroorat nahi hai
 - Agar `OWNER_USER_ID` set hai to settings commands sirf owner hi chala sakega
 
@@ -156,7 +157,7 @@ Relay rules:
 
 Game total ke liye pehle game message bhejein, phir `total` ya `/total` likhein. Bot sirf latest recent game message ka total nikaalega. Agar kisi specific game message ka total chahiye ho to us message par reply karke `total` likh sakte hain.
 
-Chart image ke liye message ke andar kahin bhi `chart`, `चार्ट`, `time`, ya `timing` likhein:
+Chart image ke liye message me exact word `chart`, `चार्ट`, `time`, ya `timing` likhein. `timeo` jaisi spelling par trigger nahi hoga:
 
 ```text
 chart dikhao

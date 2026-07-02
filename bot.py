@@ -525,7 +525,7 @@ def build_relay_summary_text(user_label: str, user_id: int, entries: list[str]) 
         if hidden_count:
             prefix_lines.append(f"... older {hidden_count} items hidden ...")
             prefix_lines.append("")
-        candidate_text = "\n".join(prefix_lines + candidate_lines)
+        candidate_text = "\n".join(prefix_lines) + ("\n\n".join(candidate_lines) if candidate_lines else "")
         if len(candidate_text) > max_length:
             total_hidden = hidden_count + 1
             break
@@ -537,8 +537,7 @@ def build_relay_summary_text(user_label: str, user_id: int, entries: list[str]) 
     if total_hidden:
         final_lines.append(f"... older {total_hidden} items hidden ...")
         final_lines.append("")
-    final_lines.extend(final_body)
-    return "\n".join(final_lines)
+    return "\n".join(final_lines) + ("\n\n".join(final_body) if final_body else "")
 
 
 async def ensure_owner_access(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
@@ -1124,7 +1123,7 @@ def main() -> None:
         MessageHandler(
             filters.TEXT
             & filters.Regex(
-                r"(?i)(chart|time|timing|\u091a\u093e\u0930\u094d\u091f|\u091f\u093e\u0907\u092e|\u091f\u093e\u0907\u092e\u093f\u0902\u0917)"
+                r"(?i)(?:\bchart\b|\btime\b|\btiming\b|\u091a\u093e\u0930\u094d\u091f|\u091f\u093e\u0907\u092e|\u091f\u093e\u0907\u092e\u093f\u0902\u0917)"
             ),
             send_chart_image,
         )
