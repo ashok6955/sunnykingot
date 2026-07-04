@@ -27,6 +27,7 @@ SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 BOT_TIMEZONE = ZoneInfo("Asia/Kolkata")
 QUIET_HOURS_START = time(4, 0)
 QUIET_HOURS_END = time(5, 20)
+GAME_OK_PATTERN = r"(?i)\bgame\s+ok\b"
 
 
 logging.basicConfig(
@@ -179,7 +180,7 @@ def save_group_lock_state(lock_state: dict[str, str]) -> None:
     )
 
 
-def load_settings() -> dict[str, int]:
+def load_settings() -> dict[str, int | dict[str, int]]:
     if not SETTINGS_FILE.exists():
         return {}
 
@@ -226,7 +227,7 @@ def load_settings() -> dict[str, int]:
     return settings
 
 
-def save_settings(settings: dict[str, int]) -> None:
+def save_settings(settings: dict[str, int | dict[str, int]]) -> None:
     SETTINGS_FILE.write_text(
         json.dumps(settings, indent=2, sort_keys=True, ensure_ascii=False),
         encoding="utf-8",
@@ -693,6 +694,7 @@ async def show_code_commands(update: Update, context: ContextTypes.DEFAULT_TYPE)
         "- `ds ok` aur `game ok` dono alag-alag groups me bheje ja sakte hain.\n"
         "- `ds ok` apne target group ko use karta hai.\n"
         "- `game ok` apne alag target group ko use karta hai.\n"
+        "- Message me kahin bhi `game ok` aa gaya to trigger ho jayega.\n"
         "- Bot subah `4:00 AM` se `5:20 AM` tak reply nahi karta."
     )
 
@@ -1136,6 +1138,10 @@ async def send_game_ok(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     if is_quiet_hours():
         return
 
+    message = get_update_message(update)
+    if re.search(GAME_OK_PATTERN, str(getattr(message, "text", "") or "")) is None:
+        return
+
     if not await can_sender_run_game_ok(update, context):
         await reply_text(
             update,
@@ -1155,7 +1161,6 @@ async def send_game_ok(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         )
         return
 
-    message = get_update_message(update)
     source_messages, used_reply_message = collect_game_source_messages(message)
     source_messages = [text for text in source_messages if text.strip()]
 
@@ -1342,7 +1347,7 @@ async def remember_recent_game_message(update: Update, context: ContextTypes.DEF
     memory = load_chat_memory()
     chat_key = str(message.chat_id)
 
-    if re.fullmatch(r"(?i)\s*(/total|total|ds\s+ok|game\s+ok)\s*", text):
+    if re.fullmatch(r"(?i)\s*(/total|total|ds\s+ok)\s*", text) or re.search(GAME_OK_PATTERN, text):
         return
 
     if not looks_like_game_message(text):
@@ -1424,7 +1429,7 @@ def main() -> None:
     )
     application.add_handler(
         MessageHandler(
-            filters.TEXT & filters.Regex(r"(?i)^\s*game\s+ok\s*$"),
+            filters.TEXT & filters.Regex(GAME_OK_PATTERN),
             send_game_ok,
         )
     )
