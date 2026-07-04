@@ -59,6 +59,7 @@ Render ka free web service use karke bot online rakh sakte hain. Free service id
 TELEGRAM_BOT_TOKEN=BotFather se mila token
 WEBHOOK_URL=https://aapka-render-service-url.onrender.com
 TARGET_GROUP_ID=-1004304577201
+GAME_TARGET_GROUP_ID=-1004304577201
 SOURCE_GROUP_ID=-1004304577201
 RELAY_CHAT_ID=-1004304577201
 ADMIN_FORUM_GROUP_ID=-1004304577201
@@ -86,9 +87,9 @@ Ya command:
 
 Group ID dekhne ke liye kisi group me `/groupid` likhein. Bot us group ka Telegram chat ID reply karega.
 
-Target group dekhne ke liye `/targetgroup` likhein.
+`ds ok` target group dekhne ke liye `/targetgroup` likhein.
 
-Target group set karne ke 2 tareeqe hain:
+`ds ok` target group set karne ke 2 tareeqe hain:
 
 ```text
 /settargetgroup -1004304577201
@@ -100,10 +101,34 @@ Ya jis group ko target banana ho us group ke andar:
 /settargetgroup
 ```
 
-Target group clear karne ke liye:
+`ds ok` target group clear karne ke liye:
 
 ```text
 /cleartargetgroup
+```
+
+`game ok` target group dekhne ke liye:
+
+```text
+/gametargetgroup
+```
+
+`game ok` target group set karne ke 2 tareeqe hain:
+
+```text
+/setgametargetgroup -1004304577201
+```
+
+Ya jis group ko `game ok` target banana ho us group ke andar:
+
+```text
+/setgametargetgroup
+```
+
+`game ok` target group clear karne ke liye:
+
+```text
+/cleargametargetgroup
 ```
 
 Source group dekhne ke liye:
@@ -153,7 +178,9 @@ Relay rules:
 - Supergroup/topics ki zaroorat nahi hai
 - Agar `OWNER_USER_ID` set hai to settings commands sirf owner hi chala sakega
 
-`ds ok` likhne par bot recent saved game messages ko target group me as a bot text bhej dega aur pehle source chat me `DISAWAR GAME OK ✔` reply karega. Beech me image ya normal text aaye to woh ignore honge. Agar kisi specific game message ko bhejna ho to us message par reply karke `ds ok` likhein.
+`ds ok` likhne par purana Disawar wala system same rahega aur bot recent saved game messages ko `ds ok` target group me as a bot text bhej dega. Agar kisi specific game message ko bhejna ho to us message par reply karke `ds ok` likhein.
+
+`game ok` ek alag command hai. Group/supergroup me sirf admin aur private chat me sirf `OWNER_USER_ID` wala owner ise chala sakta hai. `game ok` likhne par recent saved game messages `game ok` target group me bot ke naam se bhej diye jayenge, isliye sender hide rahega. Agar kisi specific game message ko bhejna ho to us message par reply karke `game ok` likhein.
 
 Game total ke liye pehle game message bhejein, phir `total` ya `/total` likhein. Bot sirf latest recent game message ka total nikaalega. Agar kisi specific game message ka total chahiye ho to us message par reply karke `total` likh sakte hain.
 
@@ -173,7 +200,7 @@ QR image ke liye message ke andar kahin bhi `qr`, `क्यूआर`, `scan`, 
 
 Har chat/user ke liye next image ka number `state.json` me save hota hai, isliye bot restart hone ke baad bhi sequence continue rahega.
 
-Note: Subah `4:00 AM` se `6:00 AM` ke beech bot koi reply nahi bhejega.
+Note: Subah `4:00 AM` se `5:20 AM` ke beech bot koi reply nahi bhejega.
 
 ## Telegram Business
 

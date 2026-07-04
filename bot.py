@@ -194,7 +194,14 @@ def load_settings() -> dict[str, int]:
 
     settings: dict[str, int | dict[str, int]] = {}
 
-    for key in ("target_group_id", "source_group_id", "relay_chat_id", "admin_forum_group_id", "owner_user_id"):
+    for key in (
+        "target_group_id",
+        "game_target_group_id",
+        "source_group_id",
+        "relay_chat_id",
+        "admin_forum_group_id",
+        "owner_user_id",
+    ):
         value = data.get(key)
         if isinstance(value, int):
             settings[key] = value
@@ -242,6 +249,14 @@ def get_target_group_id() -> int | None:
         return int(settings["target_group_id"])
 
     return parse_chat_id(os.getenv("TARGET_GROUP_ID"))
+
+
+def get_game_target_group_id() -> int | None:
+    settings = load_settings()
+    if "game_target_group_id" in settings:
+        return int(settings["game_target_group_id"])
+
+    return parse_chat_id(os.getenv("GAME_TARGET_GROUP_ID")) or get_target_group_id()
 
 
 def get_source_group_id() -> int | None:
@@ -358,7 +373,7 @@ async def on_application_start(application: Application) -> None:
     global group_lock_task
 
     await enforce_source_group_lock(application.bot)
-    group_lock_task = application.create_task(source_group_lock_worker(application))
+    group_lock_task = asyncio.create_task(source_group_lock_worker(application))
 
 
 async def on_application_shutdown(application: Application) -> None:
@@ -616,9 +631,72 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await reply_text(
         update,
         context,
-        "QR image ke liye `qr` likho. Bot `images` folder ki files ko sequence order me bhejega. Chart image ke liye `chart` likho.\n\nUser-wise relay ke liye source group me `/setsourcegroup` aur receiving chat/group me `/setrelaychat` likho.",
+        "QR image ke liye `qr` likho. Bot `images` folder ki files ko sequence order me bhejega. Chart image ke liye `chart` likho.\n\nUser-wise relay ke liye source group me `/setsourcegroup` aur receiving chat/group me `/setrelaychat` likho.\n\nSari commands aur unka kaam dekhne ke liye `/codecommand` likho.",
         parse_mode="Markdown",
     )
+
+
+async def show_code_commands(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if is_quiet_hours():
+        return
+
+    help_text = (
+        "Bot Ki Sari Commands Aur Unka Kaam\n\n"
+        "`/codecommand`\n"
+        "Is command ko likhne par bot aapko sari commands aur unka kaam dikha dega.\n\n"
+        "`/start`\n"
+        "Bot ka short intro milega. Agar basic shuruat dekhni ho to ye command likho.\n\n"
+        "`/qr`\n"
+        "Bot next QR image bhejega. Har baar sequence me agli image aayegi.\n\n"
+        "`qr`\n"
+        "Agar aap message me sirf qr likhoge to bhi bot QR image bhej dega.\n\n"
+        "`/chart`\n"
+        "Chart image bhejne ke liye ye command use hoti hai.\n\n"
+        "`chart` / `time` / `timing`\n"
+        "Ye words likhne par bot chart image bhej dega.\n\n"
+        "`/total`\n"
+        "Agar aap kisi game message par reply karke ye command likhoge to us game ka total niklega. Reply na ho to latest saved game ka total niklega.\n\n"
+        "`total`\n"
+        "Ye bhi `/total` jaisa hi kaam karega aur latest saved game ka total nikalega.\n\n"
+        "`ds ok`\n"
+        "Ye purana system hai. Isse recent saved game uthkar `ds ok` wale target group me bot ke naam se chali jayegi.\n\n"
+        "`game ok`\n"
+        "Ye alag system hai. Isse recent saved game `game ok` wale alag target group me bot ke naam se chali jayegi. Group me admin aur private me owner hi ise chala sakta hai.\n\n"
+        "Group Aur Setting Commands\n\n"
+        "`/groupid`\n"
+        "Jis group ya chat me ye command likhoge uska Telegram ID mil jayega. Group set karne me ye kaam aata hai.\n\n"
+        "`/targetgroup`\n"
+        "Isse pata chalega ki abhi `ds ok` likhne par game kis group me jayegi.\n\n"
+        "`/settargetgroup`\n"
+        "Ye `ds ok` ke liye target group set karta hai. Jis group ke andar ye command chalaoge, `ds ok` wali game usi group me jayegi. Agar ID ke saath chalaoge to us ID wala group set ho jayega.\n\n"
+        "`/cleartargetgroup`\n"
+        "Ye saved `ds ok` target group hata deta hai. Iske baad `ds ok` tab tak kaam nahi karega jab tak dobara group set na karo.\n\n"
+        "`/gametargetgroup`\n"
+        "Isse pata chalega ki abhi `game ok` likhne par game kis group me jayegi.\n\n"
+        "`/setgametargetgroup`\n"
+        "Ye `game ok` ke liye alag target group set karta hai. Jis group ke andar ye command chalaoge, `game ok` wali game usi group me jayegi. Agar ID ke saath chalaoge to us ID wala group set ho jayega.\n\n"
+        "`/cleargametargetgroup`\n"
+        "Ye saved `game ok` target group hata deta hai. Iske baad `game ok` tab tak kaam nahi karega jab tak dobara group set na karo.\n\n"
+        "`/sourcegroup`\n"
+        "Isse pata chalega ki relay system ke liye kaunsa source group set hai.\n\n"
+        "`/setsourcegroup`\n"
+        "Ye source group set karta hai. Jis group se games uthani hain relay ke liye, us group ko is command se set karte hain.\n\n"
+        "`/relaychat`\n"
+        "Isse pata chalega ki relay kahan aa rahi hai, yani receiving private chat ya group kaun sa set hai.\n\n"
+        "`/setrelaychat`\n"
+        "Ye receiving chat set karta hai. Source group se uthne wali relay isi chat ya group me aayegi.\n\n"
+        "`/adminforum`\n"
+        "Ye `/relaychat` jaisa hi command hai. Sirf compatibility ke liye rakha gaya hai.\n\n"
+        "`/setadminforum`\n"
+        "Ye `/setrelaychat` jaisa hi command hai. Sirf compatibility ke liye rakha gaya hai.\n\n"
+        "Jaruri Notes\n\n"
+        "- `ds ok` aur `game ok` dono alag-alag groups me bheje ja sakte hain.\n"
+        "- `ds ok` apne target group ko use karta hai.\n"
+        "- `game ok` apne alag target group ko use karta hai.\n"
+        "- Bot subah `4:00 AM` se `5:20 AM` tak reply nahi karta."
+    )
+
+    await reply_text(update, context, help_text, parse_mode="Markdown")
 
 
 async def send_group_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -645,7 +723,7 @@ async def show_target_group(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         await reply_text(
             update,
             context,
-            "Abhi target group set nahi hai. `/settargetgroup -1004304577201` ya target group ke andar `/settargetgroup` likho.",
+            "Abhi `ds ok` target group set nahi hai. `/settargetgroup -1004304577201` ya target group ke andar `/settargetgroup` likho.",
             parse_mode="Markdown",
         )
         return
@@ -653,7 +731,29 @@ async def show_target_group(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     await reply_text(
         update,
         context,
-        f"Current target group ID: `{target_group_id}`",
+        f"Current `ds ok` target group ID: `{target_group_id}`",
+        parse_mode="Markdown",
+    )
+
+
+async def show_game_target_group(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if is_quiet_hours():
+        return
+
+    game_target_group_id = get_game_target_group_id()
+    if game_target_group_id is None:
+        await reply_text(
+            update,
+            context,
+            "Abhi `game ok` target group set nahi hai. `/setgametargetgroup -1004304577201` ya target group ke andar `/setgametargetgroup` likho.",
+            parse_mode="Markdown",
+        )
+        return
+
+    await reply_text(
+        update,
+        context,
+        f"Current `game ok` target group ID: `{game_target_group_id}`",
         parse_mode="Markdown",
     )
 
@@ -725,7 +825,7 @@ async def set_target_group(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         await reply_text(
             update,
             context,
-            "Target group set karne ke liye `/settargetgroup -1004304577201` likho ya jis group ko target banana ho uske andar `/settargetgroup` likho.",
+            "`ds ok` target group set karne ke liye `/settargetgroup -1004304577201` likho ya jis group ko target banana ho uske andar `/settargetgroup` likho.",
             parse_mode="Markdown",
         )
         return
@@ -737,7 +837,47 @@ async def set_target_group(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     await reply_text(
         update,
         context,
-        f"Target group set ho gaya: `{target_group_id}`",
+        f"`ds ok` target group set ho gaya: `{target_group_id}`",
+        parse_mode="Markdown",
+    )
+
+
+async def set_game_target_group(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if is_quiet_hours():
+        return
+
+    if not await ensure_owner_access(update, context):
+        return
+
+    message = get_update_message(update)
+    args = list(getattr(context, "args", []) or [])
+
+    game_target_group_id: int | None = None
+    if args:
+        game_target_group_id = parse_chat_id(args[0])
+    else:
+        chat = getattr(message, "chat", None)
+        chat_type = str(getattr(chat, "type", "") or "").lower()
+        if chat_type in {"group", "supergroup", "channel"}:
+            game_target_group_id = parse_chat_id(getattr(chat, "id", None))
+
+    if game_target_group_id is None:
+        await reply_text(
+            update,
+            context,
+            "`game ok` target group set karne ke liye `/setgametargetgroup -1004304577201` likho ya jis group ko target banana ho uske andar `/setgametargetgroup` likho.",
+            parse_mode="Markdown",
+        )
+        return
+
+    settings = load_settings()
+    settings["game_target_group_id"] = game_target_group_id
+    save_settings(settings)
+
+    await reply_text(
+        update,
+        context,
+        f"`game ok` target group set ho gaya: `{game_target_group_id}`",
         parse_mode="Markdown",
     )
 
@@ -830,12 +970,37 @@ async def clear_target_group(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await reply_text(
             update,
             context,
-            f"Saved target group clear ho gaya. Env fallback abhi bhi `{env_target_group_id}` hai.",
+            f"Saved `ds ok` target group clear ho gaya. Env fallback abhi bhi `{env_target_group_id}` hai.",
             parse_mode="Markdown",
         )
         return
 
-    await reply_text(update, context, "Target group clear ho gaya.")
+    await reply_text(update, context, "`ds ok` target group clear ho gaya.", parse_mode="Markdown")
+
+
+async def clear_game_target_group(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if is_quiet_hours():
+        return
+
+    if not await ensure_owner_access(update, context):
+        return
+
+    settings = load_settings()
+    if "game_target_group_id" in settings:
+        del settings["game_target_group_id"]
+        save_settings(settings)
+
+    env_game_target_group_id = parse_chat_id(os.getenv("GAME_TARGET_GROUP_ID"))
+    if env_game_target_group_id is not None:
+        await reply_text(
+            update,
+            context,
+            f"Saved `game ok` target group clear ho gaya. Env fallback abhi bhi `{env_game_target_group_id}` hai.",
+            parse_mode="Markdown",
+        )
+        return
+
+    await reply_text(update, context, "`game ok` target group clear ho gaya.", parse_mode="Markdown")
 
 
 async def send_next_qr(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -913,6 +1078,106 @@ async def send_game_total(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     await reply_text(update, context, reply_text_value)
 
 
+def collect_game_source_messages(message) -> tuple[list[str], bool]:
+    reply_to_message = getattr(message, "reply_to_message", None)
+    if reply_to_message and getattr(reply_to_message, "text", None):
+        source_text = str(reply_to_message.text or "").strip()
+        return ([source_text] if source_text else []), True
+
+    memory = load_chat_memory()
+    return get_recent_game_messages(memory, message.chat_id), False
+
+
+async def can_sender_run_game_ok(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    message = get_update_message(update)
+    if not message or not getattr(message, "from_user", None):
+        return False
+
+    chat = getattr(message, "chat", None)
+    chat_type = str(getattr(chat, "type", "") or "").lower()
+    if chat_type in {"private", "sender"}:
+        owner_user_id = get_owner_user_id()
+        if owner_user_id is None:
+            return False
+        return int(message.from_user.id) == owner_user_id
+
+    if chat_type not in {"group", "supergroup"}:
+        return False
+
+    try:
+        member = await context.bot.get_chat_member(
+            chat_id=message.chat_id,
+            user_id=message.from_user.id,
+        )
+    except Exception:
+        logger.exception(
+            "Could not verify admin access chat_id=%s user_id=%s",
+            getattr(message, "chat_id", None),
+            getattr(message.from_user, "id", None),
+        )
+        return False
+
+    return str(getattr(member, "status", "") or "").lower() in {"administrator", "creator"}
+
+
+async def send_game_ok(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if is_quiet_hours():
+        return
+
+    if not await can_sender_run_game_ok(update, context):
+        await reply_text(
+            update,
+            context,
+            "Group me sirf admin aur private me sirf owner `game ok` chala sakta hai.",
+            parse_mode="Markdown",
+        )
+        return
+
+    target_group_id = get_game_target_group_id()
+    if target_group_id is None:
+        await reply_text(
+            update,
+            context,
+            "`game ok` target group set nahi hai. Pehle `/setgametargetgroup -1004304577201` ya target group ke andar `/setgametargetgroup` likho.",
+            parse_mode="Markdown",
+        )
+        return
+
+    message = get_update_message(update)
+    source_messages, used_reply_message = collect_game_source_messages(message)
+    source_messages = [text for text in source_messages if text.strip()]
+
+    if not source_messages:
+        await reply_text(
+            update,
+            context,
+            "Koi recent game message nahi mila. Pehle number wale game message bhejo ya unme se kisi message par reply karke `game ok` likho.",
+            parse_mode="Markdown",
+        )
+        return
+
+    invalid_messages = [text for text in source_messages if not looks_like_game_message(text)]
+    if invalid_messages:
+        await reply_text(
+            update,
+            context,
+            "Recent saved message game format me nahi mila. Number wala game message bhejo ya game message par reply karke `game ok` likho.",
+            parse_mode="Markdown",
+        )
+        return
+
+    await reply_text(update, context, "GAME OK ✔")
+    for source_text in source_messages:
+        await send_with_retry(context.bot.send_message, chat_id=target_group_id, text=source_text)
+
+    if not used_reply_message:
+        memory = load_chat_memory()
+        chat_key = str(message.chat_id)
+        if chat_key in memory:
+            del memory[chat_key]
+            save_chat_memory(memory)
+
+
 async def send_ds_ok(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if is_quiet_hours():
         return
@@ -928,15 +1193,7 @@ async def send_ds_ok(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         return
 
     message = get_update_message(update)
-    reply_to_message = getattr(message, "reply_to_message", None)
-    source_text = ""
-
-    if reply_to_message and getattr(reply_to_message, "text", None):
-        source_messages = [str(reply_to_message.text or "").strip()]
-    else:
-        memory = load_chat_memory()
-        source_messages = get_recent_game_messages(memory, message.chat_id)
-
+    source_messages, used_reply_message = collect_game_source_messages(message)
     source_messages = [text for text in source_messages if text.strip()]
 
     if not source_messages:
@@ -962,7 +1219,7 @@ async def send_ds_ok(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     for source_text in source_messages:
         await send_with_retry(context.bot.send_message, chat_id=target_group_id, text=source_text)
 
-    if not reply_to_message:
+    if not used_reply_message:
         memory = load_chat_memory()
         chat_key = str(message.chat_id)
         if chat_key in memory:
@@ -1073,7 +1330,7 @@ async def remember_recent_game_message(update: Update, context: ContextTypes.DEF
     memory = load_chat_memory()
     chat_key = str(message.chat_id)
 
-    if re.fullmatch(r"(?i)\s*(/total|total|ds\s+ok)\s*", text):
+    if re.fullmatch(r"(?i)\s*(/total|total|ds\s+ok|game\s+ok)\s*", text):
         return
 
     if not looks_like_game_message(text):
@@ -1106,10 +1363,14 @@ def main() -> None:
 
     application.add_handler(TypeHandler(Update, log_incoming_update), group=-1)
     application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("codecommand", show_code_commands))
     application.add_handler(CommandHandler("groupid", send_group_id))
     application.add_handler(CommandHandler("targetgroup", show_target_group))
+    application.add_handler(CommandHandler("gametargetgroup", show_game_target_group))
     application.add_handler(CommandHandler("settargetgroup", set_target_group))
+    application.add_handler(CommandHandler("setgametargetgroup", set_game_target_group))
     application.add_handler(CommandHandler("cleartargetgroup", clear_target_group))
+    application.add_handler(CommandHandler("cleargametargetgroup", clear_game_target_group))
     application.add_handler(CommandHandler("sourcegroup", show_source_group))
     application.add_handler(CommandHandler("setsourcegroup", set_source_group))
     application.add_handler(CommandHandler("relaychat", show_relay_chat))
@@ -1141,6 +1402,18 @@ def main() -> None:
         MessageHandler(
             filters.TEXT & filters.Regex(r"(?i)^\s*total\s*$"),
             send_game_total,
+        )
+    )
+    application.add_handler(
+        MessageHandler(
+            filters.TEXT & filters.Regex(r"(?i)^\s*/?codecommand\s*$"),
+            show_code_commands,
+        )
+    )
+    application.add_handler(
+        MessageHandler(
+            filters.TEXT & filters.Regex(r"(?i)^\s*game\s+ok\s*$"),
+            send_game_ok,
         )
     )
     application.add_handler(
