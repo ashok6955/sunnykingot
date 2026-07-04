@@ -27,7 +27,7 @@ SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 BOT_TIMEZONE = ZoneInfo("Asia/Kolkata")
 QUIET_HOURS_START = time(4, 0)
 QUIET_HOURS_END = time(5, 20)
-GAME_OK_PATTERN = r"(?i)\bgame\s+ok\b"
+GAME_OK_TRIGGER_TEXT = "🎮 GAME OK ✔️✔️"
 
 
 logging.basicConfig(
@@ -661,8 +661,8 @@ async def show_code_commands(update: Update, context: ContextTypes.DEFAULT_TYPE)
         "Ye bhi `/total` jaisa hi kaam karega aur latest saved game ka total nikalega.\n\n"
         "`ds ok`\n"
         "Ye purana system hai. Isse recent saved game uthkar `ds ok` wale target group me bot ke naam se chali jayegi.\n\n"
-        "`game ok`\n"
-        "Ye alag system hai. Isse recent saved game `game ok` wale alag target group me bot ke naam se chali jayegi. Message me kahin bhi `game ok` aa gaya to kaam ho jayega.\n\n"
+        f"`{GAME_OK_TRIGGER_TEXT}`\n"
+        "Ye alag system hai. Is exact text ko bhejne par recent saved game `game ok` wale alag target group me bot ke naam se chali jayegi.\n\n"
         "Group Aur Setting Commands\n\n"
         "`/groupid`\n"
         "Jis group ya chat me ye command likhoge uska Telegram ID mil jayega. Group set karne me ye kaam aata hai.\n\n"
@@ -673,11 +673,11 @@ async def show_code_commands(update: Update, context: ContextTypes.DEFAULT_TYPE)
         "`/cleartargetgroup`\n"
         "Ye saved `ds ok` target group hata deta hai. Iske baad `ds ok` tab tak kaam nahi karega jab tak dobara group set na karo.\n\n"
         "`/gametargetgroup`\n"
-        "Isse pata chalega ki abhi `game ok` likhne par game kis group me jayegi.\n\n"
+        f"Isse pata chalega ki abhi `{GAME_OK_TRIGGER_TEXT}` bhejne par game kis group me jayegi.\n\n"
         "`/setgametargetgroup`\n"
-        "Ye `game ok` ke liye alag target group set karta hai. Jis group ke andar ye command chalaoge, `game ok` wali game usi group me jayegi. Agar ID ke saath chalaoge to us ID wala group set ho jayega.\n\n"
+        f"Ye `{GAME_OK_TRIGGER_TEXT}` ke liye alag target group set karta hai. Jis group ke andar ye command chalaoge, us trigger wali game usi group me jayegi. Agar ID ke saath chalaoge to us ID wala group set ho jayega.\n\n"
         "`/cleargametargetgroup`\n"
-        "Ye saved `game ok` target group hata deta hai. Iske baad `game ok` tab tak kaam nahi karega jab tak dobara group set na karo.\n\n"
+        f"Ye saved `{GAME_OK_TRIGGER_TEXT}` target group hata deta hai. Iske baad ye trigger tab tak kaam nahi karega jab tak dobara group set na karo.\n\n"
         "`/sourcegroup`\n"
         "Isse pata chalega ki relay system ke liye kaunsa source group set hai.\n\n"
         "`/setsourcegroup`\n"
@@ -691,10 +691,10 @@ async def show_code_commands(update: Update, context: ContextTypes.DEFAULT_TYPE)
         "`/setadminforum`\n"
         "Ye `/setrelaychat` jaisa hi command hai. Sirf compatibility ke liye rakha gaya hai.\n\n"
         "Jaruri Notes\n\n"
-        "- `ds ok` aur `game ok` dono alag-alag groups me bheje ja sakte hain.\n"
+        f"- `ds ok` aur `{GAME_OK_TRIGGER_TEXT}` dono alag-alag groups me bheje ja sakte hain.\n"
         "- `ds ok` apne target group ko use karta hai.\n"
-        "- `game ok` apne alag target group ko use karta hai.\n"
-        "- Message me kahin bhi `game ok` aa gaya to trigger ho jayega.\n"
+        f"- `{GAME_OK_TRIGGER_TEXT}` apne alag target group ko use karta hai.\n"
+        f"- Sirf exact `{GAME_OK_TRIGGER_TEXT}` text par hi ye trigger chalega.\n"
         "- Bot subah `4:00 AM` se `5:20 AM` tak reply nahi karta."
     )
 
@@ -755,19 +755,19 @@ async def show_game_target_group(update: Update, context: ContextTypes.DEFAULT_T
         await reply_text(
             update,
             context,
-            "Abhi `game ok` target group set nahi hai. `/setgametargetgroup -1004304577201` ya target group ke andar `/setgametargetgroup` likho.",
+            f"Abhi `{GAME_OK_TRIGGER_TEXT}` target group set nahi hai. `/setgametargetgroup -1004304577201` ya target group ke andar `/setgametargetgroup` likho.",
             parse_mode="Markdown",
         )
         return
 
     group_status_line = ""
     if current_chat_id == game_target_group_id:
-        group_status_line = "\nYe current group/chat abhi `game ok` ke liye set hai."
+        group_status_line = f"\nYe current group/chat abhi `{GAME_OK_TRIGGER_TEXT}` ke liye set hai."
 
     await reply_text(
         update,
         context,
-        f"`game ok` target group ID: `{game_target_group_id}`\nIs group me `game ok` wali game bheji jayegi.{group_status_line}",
+        f"`{GAME_OK_TRIGGER_TEXT}` target group ID: `{game_target_group_id}`\nIs group me `{GAME_OK_TRIGGER_TEXT}` wali game bheji jayegi.{group_status_line}",
         parse_mode="Markdown",
     )
 
@@ -879,7 +879,7 @@ async def set_game_target_group(update: Update, context: ContextTypes.DEFAULT_TY
         await reply_text(
             update,
             context,
-            "`game ok` target group set karne ke liye `/setgametargetgroup -1004304577201` likho ya jis group ko target banana ho uske andar `/setgametargetgroup` likho.",
+            f"`{GAME_OK_TRIGGER_TEXT}` target group set karne ke liye `/setgametargetgroup -1004304577201` likho ya jis group ko target banana ho uske andar `/setgametargetgroup` likho.",
             parse_mode="Markdown",
         )
         return
@@ -891,7 +891,7 @@ async def set_game_target_group(update: Update, context: ContextTypes.DEFAULT_TY
     await reply_text(
         update,
         context,
-        f"`game ok` target group set ho gaya: `{game_target_group_id}`",
+        f"`{GAME_OK_TRIGGER_TEXT}` target group set ho gaya: `{game_target_group_id}`",
         parse_mode="Markdown",
     )
 
@@ -1009,12 +1009,12 @@ async def clear_game_target_group(update: Update, context: ContextTypes.DEFAULT_
         await reply_text(
             update,
             context,
-            f"Saved `game ok` target group clear ho gaya. Env fallback abhi bhi `{env_game_target_group_id}` hai.",
+            f"Saved `{GAME_OK_TRIGGER_TEXT}` target group clear ho gaya. Env fallback abhi bhi `{env_game_target_group_id}` hai.",
             parse_mode="Markdown",
         )
         return
 
-    await reply_text(update, context, "`game ok` target group clear ho gaya.", parse_mode="Markdown")
+    await reply_text(update, context, f"`{GAME_OK_TRIGGER_TEXT}` target group clear ho gaya.", parse_mode="Markdown")
 
 
 async def send_next_qr(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1107,7 +1107,7 @@ async def send_game_ok(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         return
 
     message = get_update_message(update)
-    if re.search(GAME_OK_PATTERN, str(getattr(message, "text", "") or "")) is None:
+    if GAME_OK_TRIGGER_TEXT not in str(getattr(message, "text", "") or ""):
         return
 
     target_group_id = get_game_target_group_id()
@@ -1115,7 +1115,7 @@ async def send_game_ok(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await reply_text(
             update,
             context,
-            "`game ok` target group set nahi hai. Pehle `/setgametargetgroup -1004304577201` ya target group ke andar `/setgametargetgroup` likho.",
+            f"`{GAME_OK_TRIGGER_TEXT}` target group set nahi hai. Pehle `/setgametargetgroup -1004304577201` ya target group ke andar `/setgametargetgroup` likho.",
             parse_mode="Markdown",
         )
         return
@@ -1127,7 +1127,7 @@ async def send_game_ok(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await reply_text(
             update,
             context,
-            "Koi recent game message nahi mila. Pehle number wale game message bhejo ya unme se kisi message par reply karke `game ok` likho.",
+            f"Koi recent game message nahi mila. Pehle number wale game message bhejo ya unme se kisi message par reply karke `{GAME_OK_TRIGGER_TEXT}` likho.",
             parse_mode="Markdown",
         )
         return
@@ -1137,7 +1137,7 @@ async def send_game_ok(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await reply_text(
             update,
             context,
-            "Recent saved message game format me nahi mila. Number wala game message bhejo ya game message par reply karke `game ok` likho.",
+            f"Recent saved message game format me nahi mila. Number wala game message bhejo ya game message par reply karke `{GAME_OK_TRIGGER_TEXT}` likho.",
             parse_mode="Markdown",
         )
         return
@@ -1306,7 +1306,7 @@ async def remember_recent_game_message(update: Update, context: ContextTypes.DEF
     memory = load_chat_memory()
     chat_key = str(message.chat_id)
 
-    if re.fullmatch(r"(?i)\s*(/total|total|ds\s+ok)\s*", text) or re.search(GAME_OK_PATTERN, text):
+    if re.fullmatch(r"(?i)\s*(/total|total|ds\s+ok)\s*", text) or GAME_OK_TRIGGER_TEXT in text:
         return
 
     if not looks_like_game_message(text):
@@ -1388,7 +1388,7 @@ def main() -> None:
     )
     application.add_handler(
         MessageHandler(
-            filters.TEXT & filters.Regex(GAME_OK_PATTERN),
+            filters.TEXT & filters.Regex(re.escape(GAME_OK_TRIGGER_TEXT)),
             send_game_ok,
         )
     )
