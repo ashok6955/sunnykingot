@@ -718,6 +718,8 @@ async def show_target_group(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     if is_quiet_hours():
         return
 
+    message = get_update_message(update)
+    current_chat_id = parse_chat_id(getattr(message, "chat_id", None))
     target_group_id = get_target_group_id()
     if target_group_id is None:
         await reply_text(
@@ -728,10 +730,14 @@ async def show_target_group(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         )
         return
 
+    group_status_line = ""
+    if current_chat_id == target_group_id:
+        group_status_line = "\nYe current group/chat abhi `ds ok` ke liye set hai."
+
     await reply_text(
         update,
         context,
-        f"Current `ds ok` target group ID: `{target_group_id}`",
+        f"`ds ok` target group ID: `{target_group_id}`\nIs group me `ds ok` likhne par game isi target group me jayegi.{group_status_line}",
         parse_mode="Markdown",
     )
 
@@ -740,6 +746,8 @@ async def show_game_target_group(update: Update, context: ContextTypes.DEFAULT_T
     if is_quiet_hours():
         return
 
+    message = get_update_message(update)
+    current_chat_id = parse_chat_id(getattr(message, "chat_id", None))
     game_target_group_id = get_game_target_group_id()
     if game_target_group_id is None:
         await reply_text(
@@ -750,10 +758,14 @@ async def show_game_target_group(update: Update, context: ContextTypes.DEFAULT_T
         )
         return
 
+    group_status_line = ""
+    if current_chat_id == game_target_group_id:
+        group_status_line = "\nYe current group/chat abhi `game ok` ke liye set hai."
+
     await reply_text(
         update,
         context,
-        f"Current `game ok` target group ID: `{game_target_group_id}`",
+        f"`game ok` target group ID: `{game_target_group_id}`\nIs group me `game ok` wali game bheji jayegi.{group_status_line}",
         parse_mode="Markdown",
     )
 
