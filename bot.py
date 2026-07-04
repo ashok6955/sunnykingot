@@ -662,7 +662,7 @@ async def show_code_commands(update: Update, context: ContextTypes.DEFAULT_TYPE)
         "`ds ok`\n"
         "Ye purana system hai. Isse recent saved game uthkar `ds ok` wale target group me bot ke naam se chali jayegi.\n\n"
         "`game ok`\n"
-        "Ye alag system hai. Isse recent saved game `game ok` wale alag target group me bot ke naam se chali jayegi. Group me admin aur private me owner hi ise chala sakta hai.\n\n"
+        "Ye alag system hai. Isse recent saved game `game ok` wale alag target group me bot ke naam se chali jayegi. Message me kahin bhi `game ok` aa gaya to kaam ho jayega.\n\n"
         "Group Aur Setting Commands\n\n"
         "`/groupid`\n"
         "Jis group ya chat me ye command likhoge uska Telegram ID mil jayega. Group set karne me ye kaam aata hai.\n\n"
@@ -1102,53 +1102,12 @@ def collect_game_source_messages(message) -> tuple[list[str], bool]:
     return get_recent_game_messages(memory, message.chat_id), False
 
 
-async def can_sender_run_game_ok(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
-    message = get_update_message(update)
-    if not message or not getattr(message, "from_user", None):
-        return False
-
-    chat = getattr(message, "chat", None)
-    chat_type = str(getattr(chat, "type", "") or "").lower()
-    if chat_type in {"private", "sender"}:
-        owner_user_id = get_owner_user_id()
-        if owner_user_id is None:
-            return False
-        return int(message.from_user.id) == owner_user_id
-
-    if chat_type not in {"group", "supergroup"}:
-        return False
-
-    try:
-        member = await context.bot.get_chat_member(
-            chat_id=message.chat_id,
-            user_id=message.from_user.id,
-        )
-    except Exception:
-        logger.exception(
-            "Could not verify admin access chat_id=%s user_id=%s",
-            getattr(message, "chat_id", None),
-            getattr(message.from_user, "id", None),
-        )
-        return False
-
-    return str(getattr(member, "status", "") or "").lower() in {"administrator", "creator"}
-
-
 async def send_game_ok(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if is_quiet_hours():
         return
 
     message = get_update_message(update)
     if re.search(GAME_OK_PATTERN, str(getattr(message, "text", "") or "")) is None:
-        return
-
-    if not await can_sender_run_game_ok(update, context):
-        await reply_text(
-            update,
-            context,
-            "Group me sirf admin aur private me sirf owner `game ok` chala sakta hai.",
-            parse_mode="Markdown",
-        )
         return
 
     target_group_id = get_game_target_group_id()
