@@ -257,7 +257,7 @@ def get_game_target_group_id() -> int | None:
     if "game_target_group_id" in settings:
         return int(settings["game_target_group_id"])
 
-    return parse_chat_id(os.getenv("GAME_TARGET_GROUP_ID")) or get_target_group_id()
+    return parse_chat_id(os.getenv("GAME_TARGET_GROUP_ID"))
 
 
 def get_source_group_id() -> int | None:
