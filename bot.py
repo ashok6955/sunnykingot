@@ -28,6 +28,40 @@ BOT_TIMEZONE = ZoneInfo("Asia/Kolkata")
 QUIET_HOURS_START = time(4, 0)
 QUIET_HOURS_END = time(5, 20)
 GAME_OK_TRIGGER_TEXT = "🎮 GAME OK ✔️✔️"
+HAPPY_HOURS_PATTERN = r"(?i)\bhappy\s*hour[s]?\b|\bhappy\s*hor[s]?\b|\bhappy\s*hourse\b"
+HAPPY_HOURS_TEXT = """╔══════════════════════════════╗
+      🤖 TELEGRAM HAPPY HOURS BETA 🤖
+           💸 10×1000 FULL RATE 💸
+╚══════════════════════════════╝
+
+🔥 HAPPY HOURS SPECIAL TIMING 🔥
+
+🕑 Delhi Bazar      ➜  2:20 PM
+🕞 Shree Ganesh     ➜  3:40 PM
+🕔 Faridabad        ➜  5:20 PM
+🕣 Ghaziabad        ➜  8:30 PM
+🕥 Gali             ➜  10:30 PM
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🎉 इन बताए गए टाइम तक
+Telegram Happy Hours Beta पर
+काम डालने पर मिलेगा
+
+💥 10×1000 का पूरा रेट 💥
+
+⚡ Happy Hours खत्म होने से पहले
+अपना काम तुरंत भेजें
+और ऑफर का पूरा फायदा उठाएँ
+
+🚀 Full Rate
+⚡ Fast Response
+🎯 Limited Time Offer
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+      🤖 TELEGRAM HAPPY HOURS BETA
+         💸 PLAY FAST • EARN BIG 💸
+━━━━━━━━━━━━━━━━━━━━━━━━━━"""
 
 
 logging.basicConfig(
@@ -655,6 +689,8 @@ async def show_code_commands(update: Update, context: ContextTypes.DEFAULT_TYPE)
         "Chart image bhejne ke liye ye command use hoti hai.\n\n"
         "`chart` / `time` / `timing`\n"
         "Ye words likhne par bot chart image bhej dega.\n\n"
+        "`happy hours`\n"
+        "Ye likhne par bot stylish Happy Hours offer message bhej dega.\n\n"
         "`/total`\n"
         "Agar aap kisi game message par reply karke ye command likhoge to us game ka total niklega. Reply na ho to latest saved game ka total niklega.\n\n"
         "`total`\n"
@@ -1061,6 +1097,13 @@ async def send_chart_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         await reply_photo(update, context, image_file)
 
 
+async def send_happy_hours(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if is_quiet_hours():
+        return
+
+    await reply_text(update, context, HAPPY_HOURS_TEXT)
+
+
 async def send_game_total(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if is_quiet_hours():
         return
@@ -1363,6 +1406,12 @@ def main() -> None:
                 r"(?i)(?:\bchart\b|\btime\b|\btiming\b|\u091a\u093e\u0930\u094d\u091f|\u091f\u093e\u0907\u092e|\u091f\u093e\u0907\u092e\u093f\u0902\u0917)"
             ),
             send_chart_image,
+        )
+    )
+    application.add_handler(
+        MessageHandler(
+            filters.TEXT & filters.Regex(HAPPY_HOURS_PATTERN),
+            send_happy_hours,
         )
     )
     application.add_handler(
