@@ -1599,7 +1599,7 @@ async def send_game_ok_verified(update: Update, context: ContextTypes.DEFAULT_TY
     if not payment_verified:
         return
 
-    await reply_text(update, context, GAME_OK_TRIGGER_TEXT)
+    await reply_text(update, context, GAME_OK_SUCCESS_TEXT)
     for source_text in source_messages:
         await send_with_retry(context.bot.send_message, chat_id=target_group_id, text=source_text)
 
@@ -1709,7 +1709,7 @@ async def send_game_ok_manual_banner(update: Update, context: ContextTypes.DEFAU
         )
         return
 
-    await reply_text(update, context, GAME_OK_SUCCESS_TEXT)
+    await reply_text(update, context, GAME_OK_TRIGGER_TEXT)
     for source_text in source_messages:
         await send_with_retry(context.bot.send_message, chat_id=target_group_id, text=source_text)
 
