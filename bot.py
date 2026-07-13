@@ -65,7 +65,7 @@ Telegram Happy Hours Beta पर
 ━━━━━━━━━━━━━━━━━━━━━━━━━━"""
 
 
-PAYMENT_VERIFICATION_WINDOW_MINUTES = 10
+PAYMENT_VERIFICATION_WINDOW_MINUTES = 15
 PAYMENT_FUTURE_TOLERANCE_MINUTES = 1
 OCR_SPACE_API_URL = "https://api.ocr.space/parse/image"
 GAME_OK_SUCCESS_TEXT = """╔════════════════════╗
