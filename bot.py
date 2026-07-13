@@ -68,6 +68,11 @@ Telegram Happy Hours Beta पर
 PAYMENT_VERIFICATION_WINDOW_MINUTES = 10
 PAYMENT_FUTURE_TOLERANCE_MINUTES = 1
 OCR_SPACE_API_URL = "https://api.ocr.space/parse/image"
+GAME_OK_SUCCESS_TEXT = """╔════════════════════╗
+🎮 GAME OK ✔️✔️
+💸 RATE 10 x 1000
+🤖 BOT BETA 1
+╚════════════════════╝"""
 
 
 logging.basicConfig(
@@ -1505,7 +1510,7 @@ async def send_game_ok_verified(update: Update, context: ContextTypes.DEFAULT_TY
     if not payment_verified:
         return
 
-    await reply_text(update, context, GAME_OK_TRIGGER_TEXT)
+    await reply_text(update, context, GAME_OK_SUCCESS_TEXT)
     for source_text in source_messages:
         await send_with_retry(context.bot.send_message, chat_id=target_group_id, text=source_text)
 
@@ -1563,7 +1568,108 @@ async def send_game_ok_plus(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         )
         return
 
-    await reply_text(update, context, "GAME OK PLUS")
+    await reply_text(update, context, GAME_OK_SUCCESS_TEXT)
+    for source_text in source_messages:
+        await send_with_retry(context.bot.send_message, chat_id=target_group_id, text=source_text)
+
+    if not used_reply_message:
+        memory = load_chat_memory()
+        chat_key = str(message.chat_id)
+        if chat_key in memory:
+            del memory[chat_key]
+            save_chat_memory(memory)
+
+
+async def send_game_ok_manual_banner(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if is_quiet_hours():
+        return
+
+    message = get_update_message(update)
+    if not is_exact_game_ok_styled_trigger(str(getattr(message, "text", "") or "")):
+        return
+
+    target_group_id = get_game_target_group_id()
+    if target_group_id is None:
+        await reply_text(
+            update,
+            context,
+            f"`{GAME_OK_TRIGGER_TEXT}` target group set nahi hai. Pehle `/setgametargetgroup -1004304577201` ya target group ke andar `/setgametargetgroup` likho.",
+            parse_mode="Markdown",
+        )
+        return
+
+    source_messages, used_reply_message = collect_game_source_messages(message)
+    source_messages = [text for text in source_messages if text.strip()]
+
+    if not source_messages:
+        await reply_text(
+            update,
+            context,
+            f"Koi recent game message nahi mila. Pehle number wale game message bhejo ya unme se kisi message par reply karke `{GAME_OK_TRIGGER_TEXT}` likho.",
+            parse_mode="Markdown",
+        )
+        return
+
+    invalid_messages = [text for text in source_messages if not looks_like_game_message(text)]
+    if invalid_messages:
+        await reply_text(
+            update,
+            context,
+            f"Recent saved message game format me nahi mila. Number wala game message bhejo ya game message par reply karke `{GAME_OK_TRIGGER_TEXT}` likho.",
+            parse_mode="Markdown",
+        )
+        return
+
+    await reply_text(update, context, GAME_OK_SUCCESS_TEXT)
+    for source_text in source_messages:
+        await send_with_retry(context.bot.send_message, chat_id=target_group_id, text=source_text)
+
+    if not used_reply_message:
+        memory = load_chat_memory()
+        chat_key = str(message.chat_id)
+        if chat_key in memory:
+            del memory[chat_key]
+            save_chat_memory(memory)
+
+
+async def send_ds_ok_banner(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if is_quiet_hours():
+        return
+
+    target_group_id = get_target_group_id()
+    if target_group_id is None:
+        await reply_text(
+            update,
+            context,
+            "Target group set nahi hai. Pehle `/settargetgroup -1004304577201` ya target group ke andar `/settargetgroup` likho.",
+            parse_mode="Markdown",
+        )
+        return
+
+    message = get_update_message(update)
+    source_messages, used_reply_message = collect_game_source_messages(message)
+    source_messages = [text for text in source_messages if text.strip()]
+
+    if not source_messages:
+        await reply_text(
+            update,
+            context,
+            "Koi recent game message nahi mila. Pehle number wale game message bhejo ya unme se kisi message par reply karke `ds ok` likho.",
+            parse_mode="Markdown",
+        )
+        return
+
+    invalid_messages = [text for text in source_messages if not looks_like_game_message(text)]
+    if invalid_messages:
+        await reply_text(
+            update,
+            context,
+            "Recent saved message game format me nahi mila. Number wala game message bhejo ya game message par reply karke `ds ok` likho.",
+            parse_mode="Markdown",
+        )
+        return
+
+    await reply_text(update, context, GAME_OK_SUCCESS_TEXT)
     for source_text in source_messages:
         await send_with_retry(context.bot.send_message, chat_id=target_group_id, text=source_text)
 
@@ -1816,7 +1922,7 @@ def main() -> None:
     application.add_handler(
         MessageHandler(
             filters.TEXT & filters.Regex(re.escape(GAME_OK_TRIGGER_TEXT)),
-            send_game_ok,
+            send_game_ok_manual_banner,
         )
     )
     application.add_handler(
@@ -1834,7 +1940,7 @@ def main() -> None:
     application.add_handler(
         MessageHandler(
             filters.TEXT & filters.Regex(r"(?i)^\s*ds\s+ok\s*$"),
-            send_ds_ok,
+            send_ds_ok_banner,
         )
     )
     application.add_handler(
