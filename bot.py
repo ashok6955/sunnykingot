@@ -3,7 +3,7 @@ import json
 import logging
 import os
 import re
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -20,6 +20,7 @@ IMAGES_DIR = BASE_DIR / "images"
 CHART_IMAGE_DIR = BASE_DIR / "chart_image"
 STATE_FILE = BASE_DIR / "state.json"
 CHAT_MEMORY_FILE = BASE_DIR / "chat_memory.json"
+PAYMENT_MEMORY_FILE = BASE_DIR / "payment_memory.json"
 SETTINGS_FILE = BASE_DIR / "bot_settings.json"
 RELAY_STATE_FILE = BASE_DIR / "relay_state.json"
 GROUP_LOCK_STATE_FILE = BASE_DIR / "group_lock_state.json"
@@ -62,6 +63,11 @@ Telegram Happy Hours Beta पर
       🤖 TELEGRAM HAPPY HOURS BETA
          💸 PLAY FAST • EARN BIG 💸
 ━━━━━━━━━━━━━━━━━━━━━━━━━━"""
+
+
+PAYMENT_VERIFICATION_WINDOW_MINUTES = 10
+PAYMENT_FUTURE_TOLERANCE_MINUTES = 1
+OCR_SPACE_API_URL = "https://api.ocr.space/parse/image"
 
 
 logging.basicConfig(
@@ -129,6 +135,56 @@ def load_chat_memory() -> dict[str, list[str]]:
 def save_chat_memory(memory: dict[str, list[str]]) -> None:
     CHAT_MEMORY_FILE.write_text(
         json.dumps(memory, indent=2, sort_keys=True, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+
+def load_payment_memory() -> dict[str, list[dict[str, str | int]]]:
+    if not PAYMENT_MEMORY_FILE.exists():
+        return {}
+
+    try:
+        data = json.loads(PAYMENT_MEMORY_FILE.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        logger.warning("Could not read payment memory file. Starting with empty payment memory.")
+        return {}
+
+    if not isinstance(data, dict):
+        return {}
+
+    payment_memory: dict[str, list[dict[str, str | int]]] = {}
+    for chat_id, raw_items in data.items():
+        if not isinstance(chat_id, str) or not isinstance(raw_items, list):
+            continue
+
+        items: list[dict[str, str | int]] = []
+        for raw_item in raw_items:
+            if not isinstance(raw_item, dict):
+                continue
+
+            file_id = str(raw_item.get("file_id", "") or "").strip()
+            if not file_id:
+                continue
+
+            message_id = parse_chat_id(raw_item.get("message_id")) or 0
+            sent_at = str(raw_item.get("sent_at", "") or "").strip()
+            items.append(
+                {
+                    "file_id": file_id,
+                    "message_id": int(message_id),
+                    "sent_at": sent_at,
+                }
+            )
+
+        if items:
+            payment_memory[chat_id] = items[-10:]
+
+    return payment_memory
+
+
+def save_payment_memory(payment_memory: dict[str, list[dict[str, str | int]]]) -> None:
+    PAYMENT_MEMORY_FILE.write_text(
+        json.dumps(payment_memory, indent=2, sort_keys=True, ensure_ascii=False),
         encoding="utf-8",
     )
 
@@ -527,6 +583,22 @@ def is_image_document(message) -> bool:
     mime_type = str(getattr(document, "mime_type", "") or "").lower()
     file_name = str(getattr(document, "file_name", "") or "").lower()
     return mime_type.startswith("image/") or file_name.endswith(tuple(SUPPORTED_EXTENSIONS))
+
+
+def message_has_payment_image(message) -> bool:
+    return bool(getattr(message, "photo", None)) or is_image_document(message)
+
+
+def get_message_image_file_id(message) -> str:
+    photos = getattr(message, "photo", None) or []
+    if photos:
+        return str(photos[-1].file_id or "")
+
+    document = getattr(message, "document", None)
+    if document and is_image_document(message):
+        return str(document.file_id or "")
+
+    return ""
 
 
 def should_relay_group_message(message) -> bool:
@@ -1104,6 +1176,169 @@ async def send_happy_hours(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     await reply_text(update, context, HAPPY_HOURS_TEXT)
 
 
+def get_recent_payment_items(
+    payment_memory: dict[str, list[dict[str, str | int]]],
+    chat_id: int,
+    limit: int = 5,
+) -> list[dict[str, str | int]]:
+    return payment_memory.get(str(chat_id), [])[-limit:]
+
+
+async def remember_recent_payment_screenshot(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    del context
+    message = get_update_message(update)
+    if not message or not message_has_payment_image(message):
+        return
+
+    if getattr(message, "from_user", None) and getattr(message.from_user, "is_bot", False):
+        return
+
+    file_id = get_message_image_file_id(message)
+    if not file_id:
+        return
+
+    payment_memory = load_payment_memory()
+    chat_key = str(message.chat_id)
+    existing_items = get_recent_payment_items(payment_memory, message.chat_id, limit=9)
+    existing_items.append(
+        {
+            "file_id": file_id,
+            "message_id": int(getattr(message, "message_id", 0) or 0),
+            "sent_at": datetime.now(BOT_TIMEZONE).isoformat(),
+        }
+    )
+    payment_memory[chat_key] = existing_items[-10:]
+    save_payment_memory(payment_memory)
+
+
+async def extract_ocr_text_from_image_bytes(image_bytes: bytes) -> str:
+    api_key = str(os.getenv("OCR_SPACE_API_KEY", "") or "").strip() or "helloworld"
+    timeout = httpx.Timeout(45.0, connect=30.0, read=45.0, write=45.0, pool=45.0)
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        response = await client.post(
+            OCR_SPACE_API_URL,
+            data={
+                "apikey": api_key,
+                "language": "eng",
+                "isOverlayRequired": "false",
+                "OCREngine": "2",
+                "scale": "true",
+                "isTable": "false",
+            },
+            files={"file": ("payment.jpg", image_bytes, "image/jpeg")},
+        )
+        response.raise_for_status()
+
+    data = response.json()
+    parsed_results = data.get("ParsedResults", []) or []
+    text_parts: list[str] = []
+    for result in parsed_results:
+        if not isinstance(result, dict):
+            continue
+        parsed_text = str(result.get("ParsedText", "") or "").strip()
+        if parsed_text:
+            text_parts.append(parsed_text)
+    return "\n".join(text_parts).strip()
+
+
+def parse_payment_datetime_from_text(ocr_text: str, reference_now: datetime) -> datetime | None:
+    normalized_text = re.sub(r"\s+", " ", ocr_text)
+    month_map = {
+        "jan": 1,
+        "feb": 2,
+        "mar": 3,
+        "apr": 4,
+        "may": 5,
+        "jun": 6,
+        "jul": 7,
+        "aug": 8,
+        "sep": 9,
+        "oct": 10,
+        "nov": 11,
+        "dec": 12,
+    }
+    match = re.search(
+        r"\b(\d{1,2})\s*(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\b[, ]+(\d{1,2}):(\d{2})\s*([ap]m)\b",
+        normalized_text,
+        re.IGNORECASE,
+    )
+    if not match:
+        return None
+
+    day = int(match.group(1))
+    month = month_map[match.group(2).lower()]
+    hour = int(match.group(3))
+    minute = int(match.group(4))
+    meridiem = match.group(5).lower()
+
+    if meridiem == "pm" and hour != 12:
+        hour += 12
+    if meridiem == "am" and hour == 12:
+        hour = 0
+
+    try:
+        return datetime(
+            year=reference_now.year,
+            month=month,
+            day=day,
+            hour=hour,
+            minute=minute,
+            tzinfo=BOT_TIMEZONE,
+        )
+    except ValueError:
+        return None
+
+
+def looks_like_payment_ocr_text(ocr_text: str) -> bool:
+    normalized_text = re.sub(r"\s+", " ", ocr_text).lower()
+    has_amount = bool(re.search(r"(?:rs|inr|₹)\s*\d{1,6}|\d{1,6}\s*(?:rs|inr)", normalized_text))
+    has_payment_keyword = any(
+        keyword in normalized_text
+        for keyword in ("paytm", "phonepe", "gpay", "google pay", "upi", "ref. no", "ref no", "paid", "success")
+    )
+    return has_amount and has_payment_keyword
+
+
+async def is_recent_valid_payment_screenshot(bot, chat_id: int) -> bool:
+    payment_memory = load_payment_memory()
+    payment_items = list(reversed(get_recent_payment_items(payment_memory, chat_id)))
+    if not payment_items:
+        return False
+
+    now = datetime.now(BOT_TIMEZONE)
+    oldest_allowed = now - timedelta(minutes=PAYMENT_VERIFICATION_WINDOW_MINUTES)
+    newest_allowed = now + timedelta(minutes=PAYMENT_FUTURE_TOLERANCE_MINUTES)
+
+    for payment_item in payment_items:
+        file_id = str(payment_item.get("file_id", "") or "").strip()
+        if not file_id:
+            continue
+
+        try:
+            telegram_file = await bot.get_file(file_id)
+            image_bytes = bytes(await telegram_file.download_as_bytearray())
+            ocr_text = await extract_ocr_text_from_image_bytes(image_bytes)
+            if not ocr_text:
+                continue
+
+            if not looks_like_payment_ocr_text(ocr_text):
+                continue
+
+            payment_dt = parse_payment_datetime_from_text(ocr_text, now)
+            if payment_dt is None:
+                continue
+
+            if payment_dt.date() != now.date():
+                continue
+
+            if oldest_allowed <= payment_dt <= newest_allowed:
+                return True
+        except Exception:
+            logger.exception("Could not verify payment screenshot for chat_id=%s", chat_id)
+
+    return False
+
+
 async def send_game_total(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if is_quiet_hours():
         return
@@ -1195,6 +1430,68 @@ async def send_game_ok(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         if chat_key in memory:
             del memory[chat_key]
             save_chat_memory(memory)
+
+
+async def send_game_ok_verified(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if is_quiet_hours():
+        return
+
+    message = get_update_message(update)
+    if GAME_OK_TRIGGER_TEXT not in str(getattr(message, "text", "") or ""):
+        return
+
+    target_group_id = get_game_target_group_id()
+    if target_group_id is None:
+        await reply_text(
+            update,
+            context,
+            f"`{GAME_OK_TRIGGER_TEXT}` target group set nahi hai. Pehle `/setgametargetgroup -1004304577201` ya target group ke andar `/setgametargetgroup` likho.",
+            parse_mode="Markdown",
+        )
+        return
+
+    source_messages, used_reply_message = collect_game_source_messages(message)
+    source_messages = [text for text in source_messages if text.strip()]
+
+    if not source_messages:
+        await reply_text(
+            update,
+            context,
+            f"Koi recent game message nahi mila. Pehle number wale game message bhejo ya unme se kisi message par reply karke `{GAME_OK_TRIGGER_TEXT}` likho.",
+            parse_mode="Markdown",
+        )
+        return
+
+    invalid_messages = [text for text in source_messages if not looks_like_game_message(text)]
+    if invalid_messages:
+        await reply_text(
+            update,
+            context,
+            f"Recent saved message game format me nahi mila. Number wala game message bhejo ya game message par reply karke `{GAME_OK_TRIGGER_TEXT}` likho.",
+            parse_mode="Markdown",
+        )
+        return
+
+    payment_verified = await is_recent_valid_payment_screenshot(context.bot, message.chat_id)
+    if not payment_verified:
+        return
+
+    await reply_text(update, context, GAME_OK_TRIGGER_TEXT)
+    for source_text in source_messages:
+        await send_with_retry(context.bot.send_message, chat_id=target_group_id, text=source_text)
+
+    if not used_reply_message:
+        memory = load_chat_memory()
+        chat_key = str(message.chat_id)
+        if chat_key in memory:
+            del memory[chat_key]
+            save_chat_memory(memory)
+
+    payment_memory = load_payment_memory()
+    payment_chat_key = str(message.chat_id)
+    if payment_chat_key in payment_memory:
+        del payment_memory[payment_chat_key]
+        save_payment_memory(payment_memory)
 
 
 async def send_ds_ok(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1438,7 +1735,7 @@ def main() -> None:
     application.add_handler(
         MessageHandler(
             filters.TEXT & filters.Regex(re.escape(GAME_OK_TRIGGER_TEXT)),
-            send_game_ok,
+            send_game_ok_verified,
         )
     )
     application.add_handler(
@@ -1450,6 +1747,10 @@ def main() -> None:
     application.add_handler(
         MessageHandler(filters.ALL & ~filters.COMMAND, relay_source_group_message),
         group=1,
+    )
+    application.add_handler(
+        MessageHandler((filters.PHOTO | filters.Document.ALL) & ~filters.COMMAND, remember_recent_payment_screenshot),
+        group=2,
     )
     application.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, remember_recent_game_message),
