@@ -1367,6 +1367,95 @@ async def is_recent_valid_payment_screenshot(bot, chat_id: int) -> bool:
     return False
 
 
+def parse_iso_datetime(value: str) -> datetime | None:
+    raw_value = str(value or "").strip()
+    if not raw_value:
+        return None
+
+    try:
+        parsed = datetime.fromisoformat(raw_value)
+    except ValueError:
+        return None
+
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=BOT_TIMEZONE)
+    return parsed.astimezone(BOT_TIMEZONE)
+
+
+def looks_like_payment_ocr_text(ocr_text: str) -> bool:
+    normalized_text = re.sub(r"\s+", " ", ocr_text).lower()
+    has_amount = bool(
+        re.search(r"(?:rs|inr|₹|â‚¹)\s*\d{1,6}|\d{1,6}\s*(?:rs|inr)|\b\d{1,6}\b", normalized_text)
+    )
+    has_payment_keyword = any(
+        keyword in normalized_text
+        for keyword in (
+            "paytm",
+            "phonepe",
+            "gpay",
+            "google pay",
+            "upi",
+            "ref. no",
+            "ref no",
+            "refno",
+            "paid",
+            "success",
+            "successful",
+            "sent",
+            "chaat point",
+            "check balance",
+            "share",
+        )
+    )
+    return has_amount and has_payment_keyword
+
+
+async def is_recent_valid_payment_screenshot(bot, chat_id: int) -> bool:
+    payment_memory = load_payment_memory()
+    payment_items = list(reversed(get_recent_payment_items(payment_memory, chat_id)))
+    if not payment_items:
+        return False
+
+    now = datetime.now(BOT_TIMEZONE)
+    oldest_allowed = now - timedelta(minutes=PAYMENT_VERIFICATION_WINDOW_MINUTES)
+    newest_allowed = now + timedelta(minutes=PAYMENT_FUTURE_TOLERANCE_MINUTES)
+
+    for payment_item in payment_items:
+        file_id = str(payment_item.get("file_id", "") or "").strip()
+        if not file_id:
+            continue
+
+        try:
+            screenshot_sent_at = parse_iso_datetime(str(payment_item.get("sent_at", "") or ""))
+            telegram_file = await bot.get_file(file_id)
+            image_bytes = bytes(await telegram_file.download_as_bytearray())
+            ocr_text = await extract_ocr_text_from_image_bytes(image_bytes)
+
+            if not ocr_text:
+                if screenshot_sent_at and oldest_allowed <= screenshot_sent_at <= newest_allowed:
+                    return True
+                continue
+
+            if not looks_like_payment_ocr_text(ocr_text):
+                continue
+
+            payment_dt = parse_payment_datetime_from_text(ocr_text, now)
+            if payment_dt is None:
+                if screenshot_sent_at and oldest_allowed <= screenshot_sent_at <= newest_allowed:
+                    return True
+                continue
+
+            if payment_dt.date() != now.date():
+                continue
+
+            if oldest_allowed <= payment_dt <= newest_allowed:
+                return True
+        except Exception:
+            logger.exception("Could not verify payment screenshot for chat_id=%s", chat_id)
+
+    return False
+
+
 async def send_game_total(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if is_quiet_hours():
         return
