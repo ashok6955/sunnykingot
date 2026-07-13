@@ -601,6 +601,13 @@ def get_message_image_file_id(message) -> str:
     return ""
 
 
+def is_game_ok_trigger_text(text: str) -> bool:
+    normalized_text = str(text or "").lower()
+    has_game = bool(re.search(r"\bgame\b", normalized_text))
+    has_ok = bool(re.search(r"\bok\b", normalized_text))
+    return has_game and has_ok
+
+
 def should_relay_group_message(message) -> bool:
     text = str(getattr(message, "text", "") or "").strip()
     return bool(text and looks_like_game_message(text))
@@ -802,7 +809,7 @@ async def show_code_commands(update: Update, context: ContextTypes.DEFAULT_TYPE)
         f"- `ds ok` aur `{GAME_OK_TRIGGER_TEXT}` dono alag-alag groups me bheje ja sakte hain.\n"
         "- `ds ok` apne target group ko use karta hai.\n"
         f"- `{GAME_OK_TRIGGER_TEXT}` apne alag target group ko use karta hai.\n"
-        f"- Sirf exact `{GAME_OK_TRIGGER_TEXT}` text par hi ye trigger chalega.\n"
+        "- Jis bhi text me `game` aur `ok` dono honge, ye trigger chal jayega. Jaise: `game ok`, `ok game`, `game game ok`.\n"
         "- Bot subah `4:00 AM` se `5:20 AM` tak reply nahi karta."
     )
 
@@ -1385,7 +1392,7 @@ async def send_game_ok(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         return
 
     message = get_update_message(update)
-    if GAME_OK_TRIGGER_TEXT not in str(getattr(message, "text", "") or ""):
+    if not is_game_ok_trigger_text(str(getattr(message, "text", "") or "")):
         return
 
     target_group_id = get_game_target_group_id()
@@ -1437,7 +1444,7 @@ async def send_game_ok_verified(update: Update, context: ContextTypes.DEFAULT_TY
         return
 
     message = get_update_message(update)
-    if GAME_OK_TRIGGER_TEXT not in str(getattr(message, "text", "") or ""):
+    if not is_game_ok_trigger_text(str(getattr(message, "text", "") or "")):
         return
 
     target_group_id = get_game_target_group_id()
@@ -1646,7 +1653,7 @@ async def remember_recent_game_message(update: Update, context: ContextTypes.DEF
     memory = load_chat_memory()
     chat_key = str(message.chat_id)
 
-    if re.fullmatch(r"(?i)\s*(/total|total|ds\s+ok)\s*", text) or GAME_OK_TRIGGER_TEXT in text:
+    if re.fullmatch(r"(?i)\s*(/total|total|ds\s+ok)\s*", text) or is_game_ok_trigger_text(text):
         return
 
     if not looks_like_game_message(text):
@@ -1734,7 +1741,7 @@ def main() -> None:
     )
     application.add_handler(
         MessageHandler(
-            filters.TEXT & filters.Regex(re.escape(GAME_OK_TRIGGER_TEXT)),
+            filters.TEXT & filters.Regex(r"(?i)^(?=.*\bgame\b)(?=.*\bok\b).*$"),
             send_game_ok_verified,
         )
     )
