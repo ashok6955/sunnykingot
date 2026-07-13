@@ -608,6 +608,14 @@ def is_game_ok_trigger_text(text: str) -> bool:
     return has_game and has_ok
 
 
+def is_game_ok_plus_trigger_text(text: str) -> bool:
+    normalized_text = str(text or "").lower()
+    has_game = bool(re.search(r"\bgame\b|गेम", normalized_text))
+    has_ok = bool(re.search(r"\bok\b|\boke\b|\bokay\b|ओके", normalized_text))
+    has_plus = bool(re.search(r"\bplus\b|प्लस", normalized_text))
+    return has_game and has_ok and has_plus
+
+
 def should_relay_group_message(message) -> bool:
     text = str(getattr(message, "text", "") or "").strip()
     return bool(text and looks_like_game_message(text))
@@ -777,7 +785,9 @@ async def show_code_commands(update: Update, context: ContextTypes.DEFAULT_TYPE)
         "`ds ok`\n"
         "Ye purana system hai. Isse recent saved game uthkar `ds ok` wale target group me bot ke naam se chali jayegi.\n\n"
         f"`{GAME_OK_TRIGGER_TEXT}`\n"
-        "Ye alag system hai. Is exact text ko bhejne par recent saved game `game ok` wale alag target group me bot ke naam se chali jayegi.\n\n"
+        "Ye alag system hai. Is trigger par recent saved game `game ok` wale alag target group me bot ke naam se chali jayegi.\n\n"
+        "`game ok plus`\n"
+        "Jis bhi text me `game`, `ok` aur `plus` teenon honge, bot screenshot verify kiye bina plus-balance wali game ko same `game ok` target group me bhej dega.\n\n"
         "Group Aur Setting Commands\n\n"
         "`/groupid`\n"
         "Jis group ya chat me ye command likhoge uska Telegram ID mil jayega. Group set karne me ye kaam aata hai.\n\n"
@@ -810,6 +820,7 @@ async def show_code_commands(update: Update, context: ContextTypes.DEFAULT_TYPE)
         "- `ds ok` apne target group ko use karta hai.\n"
         f"- `{GAME_OK_TRIGGER_TEXT}` apne alag target group ko use karta hai.\n"
         "- Jis bhi text me `game` aur `ok` dono honge, ye trigger chal jayega. Jaise: `game ok`, `ok game`, `game game ok`.\n"
+        "- Jis bhi text me `game`, `ok`, aur `plus` teenon honge, `GAME OK PLUS` flow chalega aur screenshot ki zarurat nahi hogi.\n"
         "- Bot subah `4:00 AM` se `5:20 AM` tak reply nahi karta."
     )
 
@@ -1444,6 +1455,9 @@ async def send_game_ok_verified(update: Update, context: ContextTypes.DEFAULT_TY
         return
 
     message = get_update_message(update)
+    if is_game_ok_plus_trigger_text(str(getattr(message, "text", "") or "")):
+        return
+
     if not is_game_ok_trigger_text(str(getattr(message, "text", "") or "")):
         return
 
@@ -1499,6 +1513,58 @@ async def send_game_ok_verified(update: Update, context: ContextTypes.DEFAULT_TY
     if payment_chat_key in payment_memory:
         del payment_memory[payment_chat_key]
         save_payment_memory(payment_memory)
+
+
+async def send_game_ok_plus(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if is_quiet_hours():
+        return
+
+    message = get_update_message(update)
+    if not is_game_ok_plus_trigger_text(str(getattr(message, "text", "") or "")):
+        return
+
+    target_group_id = get_game_target_group_id()
+    if target_group_id is None:
+        await reply_text(
+            update,
+            context,
+            f"`{GAME_OK_TRIGGER_TEXT}` target group set nahi hai. Pehle `/setgametargetgroup -1004304577201` ya target group ke andar `/setgametargetgroup` likho.",
+            parse_mode="Markdown",
+        )
+        return
+
+    source_messages, used_reply_message = collect_game_source_messages(message)
+    source_messages = [text for text in source_messages if text.strip()]
+
+    if not source_messages:
+        await reply_text(
+            update,
+            context,
+            "Koi recent game message nahi mila. Pehle number wale game message bhejo.",
+            parse_mode="Markdown",
+        )
+        return
+
+    invalid_messages = [text for text in source_messages if not looks_like_game_message(text)]
+    if invalid_messages:
+        await reply_text(
+            update,
+            context,
+            "Recent saved message game format me nahi mila. Number wala game message bhejo.",
+            parse_mode="Markdown",
+        )
+        return
+
+    await reply_text(update, context, "GAME OK PLUS")
+    for source_text in source_messages:
+        await send_with_retry(context.bot.send_message, chat_id=target_group_id, text=source_text)
+
+    if not used_reply_message:
+        memory = load_chat_memory()
+        chat_key = str(message.chat_id)
+        if chat_key in memory:
+            del memory[chat_key]
+            save_chat_memory(memory)
 
 
 async def send_ds_ok(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1653,7 +1719,7 @@ async def remember_recent_game_message(update: Update, context: ContextTypes.DEF
     memory = load_chat_memory()
     chat_key = str(message.chat_id)
 
-    if re.fullmatch(r"(?i)\s*(/total|total|ds\s+ok)\s*", text) or is_game_ok_trigger_text(text):
+    if re.fullmatch(r"(?i)\s*(/total|total|ds\s+ok)\s*", text) or is_game_ok_trigger_text(text) or is_game_ok_plus_trigger_text(text):
         return
 
     if not looks_like_game_message(text):
@@ -1737,6 +1803,12 @@ def main() -> None:
         MessageHandler(
             filters.TEXT & filters.Regex(r"(?i)^\s*/?codecommand\s*$"),
             show_code_commands,
+        )
+    )
+    application.add_handler(
+        MessageHandler(
+            filters.TEXT & filters.Regex(r"(?i)^(?=.*(?:\bgame\b|गेम))(?=.*(?:\bok\b|\boke\b|\bokay\b|ओके))(?=.*(?:\bplus\b|प्लस)).*$"),
+            send_game_ok_plus,
         )
     )
     application.add_handler(
