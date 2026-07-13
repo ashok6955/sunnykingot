@@ -20,7 +20,6 @@ IMAGES_DIR = BASE_DIR / "images"
 CHART_IMAGE_DIR = BASE_DIR / "chart_image"
 STATE_FILE = BASE_DIR / "state.json"
 CHAT_MEMORY_FILE = BASE_DIR / "chat_memory.json"
-PAYMENT_MEMORY_FILE = BASE_DIR / "payment_memory.json"
 SETTINGS_FILE = BASE_DIR / "bot_settings.json"
 RELAY_STATE_FILE = BASE_DIR / "relay_state.json"
 GROUP_LOCK_STATE_FILE = BASE_DIR / "group_lock_state.json"
@@ -65,9 +64,6 @@ Telegram Happy Hours Beta पर
 ━━━━━━━━━━━━━━━━━━━━━━━━━━"""
 
 
-PAYMENT_VERIFICATION_WINDOW_MINUTES = 15
-PAYMENT_FUTURE_TOLERANCE_MINUTES = 1
-OCR_SPACE_API_URL = "https://api.ocr.space/parse/image"
 GAME_OK_SUCCESS_TEXT = """╔════════════════════╗
 🎮 GAME OK ✔️✔️
 💸 RATE 10 x 1000
@@ -140,56 +136,6 @@ def load_chat_memory() -> dict[str, list[str]]:
 def save_chat_memory(memory: dict[str, list[str]]) -> None:
     CHAT_MEMORY_FILE.write_text(
         json.dumps(memory, indent=2, sort_keys=True, ensure_ascii=False),
-        encoding="utf-8",
-    )
-
-
-def load_payment_memory() -> dict[str, list[dict[str, str | int]]]:
-    if not PAYMENT_MEMORY_FILE.exists():
-        return {}
-
-    try:
-        data = json.loads(PAYMENT_MEMORY_FILE.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        logger.warning("Could not read payment memory file. Starting with empty payment memory.")
-        return {}
-
-    if not isinstance(data, dict):
-        return {}
-
-    payment_memory: dict[str, list[dict[str, str | int]]] = {}
-    for chat_id, raw_items in data.items():
-        if not isinstance(chat_id, str) or not isinstance(raw_items, list):
-            continue
-
-        items: list[dict[str, str | int]] = []
-        for raw_item in raw_items:
-            if not isinstance(raw_item, dict):
-                continue
-
-            file_id = str(raw_item.get("file_id", "") or "").strip()
-            if not file_id:
-                continue
-
-            message_id = parse_chat_id(raw_item.get("message_id")) or 0
-            sent_at = str(raw_item.get("sent_at", "") or "").strip()
-            items.append(
-                {
-                    "file_id": file_id,
-                    "message_id": int(message_id),
-                    "sent_at": sent_at,
-                }
-            )
-
-        if items:
-            payment_memory[chat_id] = items[-10:]
-
-    return payment_memory
-
-
-def save_payment_memory(payment_memory: dict[str, list[dict[str, str | int]]]) -> None:
-    PAYMENT_MEMORY_FILE.write_text(
-        json.dumps(payment_memory, indent=2, sort_keys=True, ensure_ascii=False),
         encoding="utf-8",
     )
 
@@ -588,22 +534,6 @@ def is_image_document(message) -> bool:
     mime_type = str(getattr(document, "mime_type", "") or "").lower()
     file_name = str(getattr(document, "file_name", "") or "").lower()
     return mime_type.startswith("image/") or file_name.endswith(tuple(SUPPORTED_EXTENSIONS))
-
-
-def message_has_payment_image(message) -> bool:
-    return bool(getattr(message, "photo", None)) or is_image_document(message)
-
-
-def get_message_image_file_id(message) -> str:
-    photos = getattr(message, "photo", None) or []
-    if photos:
-        return str(photos[-1].file_id or "")
-
-    document = getattr(message, "document", None)
-    if document and is_image_document(message):
-        return str(document.file_id or "")
-
-    return ""
 
 
 def is_game_ok_trigger_text(text: str) -> bool:
@@ -1213,30 +1143,8 @@ def get_recent_payment_items(
 
 
 async def remember_recent_payment_screenshot(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    del context
-    message = get_update_message(update)
-    if not message or not message_has_payment_image(message):
-        return
-
-    if getattr(message, "from_user", None) and getattr(message.from_user, "is_bot", False):
-        return
-
-    file_id = get_message_image_file_id(message)
-    if not file_id:
-        return
-
-    payment_memory = load_payment_memory()
-    chat_key = str(message.chat_id)
-    existing_items = get_recent_payment_items(payment_memory, message.chat_id, limit=9)
-    existing_items.append(
-        {
-            "file_id": file_id,
-            "message_id": int(getattr(message, "message_id", 0) or 0),
-            "sent_at": datetime.now(BOT_TIMEZONE).isoformat(),
-        }
-    )
-    payment_memory[chat_key] = existing_items[-10:]
-    save_payment_memory(payment_memory)
+    del update, context
+    return
 
 
 async def extract_ocr_text_from_image_bytes(image_bytes: bytes) -> str:
@@ -1328,43 +1236,8 @@ def looks_like_payment_ocr_text(ocr_text: str) -> bool:
 
 
 async def is_recent_valid_payment_screenshot(bot, chat_id: int) -> bool:
-    payment_memory = load_payment_memory()
-    payment_items = list(reversed(get_recent_payment_items(payment_memory, chat_id)))
-    if not payment_items:
-        return False
-
-    now = datetime.now(BOT_TIMEZONE)
-    oldest_allowed = now - timedelta(minutes=PAYMENT_VERIFICATION_WINDOW_MINUTES)
-    newest_allowed = now + timedelta(minutes=PAYMENT_FUTURE_TOLERANCE_MINUTES)
-
-    for payment_item in payment_items:
-        file_id = str(payment_item.get("file_id", "") or "").strip()
-        if not file_id:
-            continue
-
-        try:
-            telegram_file = await bot.get_file(file_id)
-            image_bytes = bytes(await telegram_file.download_as_bytearray())
-            ocr_text = await extract_ocr_text_from_image_bytes(image_bytes)
-            if not ocr_text:
-                continue
-
-            if not looks_like_payment_ocr_text(ocr_text):
-                continue
-
-            payment_dt = parse_payment_datetime_from_text(ocr_text, now)
-            if payment_dt is None:
-                continue
-
-            if payment_dt.date() != now.date():
-                continue
-
-            if oldest_allowed <= payment_dt <= newest_allowed:
-                return True
-        except Exception:
-            logger.exception("Could not verify payment screenshot for chat_id=%s", chat_id)
-
-    return False
+    del bot, chat_id
+    return True
 
 
 def parse_iso_datetime(value: str) -> datetime | None:
@@ -1411,49 +1284,8 @@ def looks_like_payment_ocr_text(ocr_text: str) -> bool:
 
 
 async def is_recent_valid_payment_screenshot(bot, chat_id: int) -> bool:
-    payment_memory = load_payment_memory()
-    payment_items = list(reversed(get_recent_payment_items(payment_memory, chat_id)))
-    if not payment_items:
-        return False
-
-    now = datetime.now(BOT_TIMEZONE)
-    oldest_allowed = now - timedelta(minutes=PAYMENT_VERIFICATION_WINDOW_MINUTES)
-    newest_allowed = now + timedelta(minutes=PAYMENT_FUTURE_TOLERANCE_MINUTES)
-
-    for payment_item in payment_items:
-        file_id = str(payment_item.get("file_id", "") or "").strip()
-        if not file_id:
-            continue
-
-        try:
-            screenshot_sent_at = parse_iso_datetime(str(payment_item.get("sent_at", "") or ""))
-            telegram_file = await bot.get_file(file_id)
-            image_bytes = bytes(await telegram_file.download_as_bytearray())
-            ocr_text = await extract_ocr_text_from_image_bytes(image_bytes)
-
-            if not ocr_text:
-                if screenshot_sent_at and oldest_allowed <= screenshot_sent_at <= newest_allowed:
-                    return True
-                continue
-
-            if not looks_like_payment_ocr_text(ocr_text):
-                continue
-
-            payment_dt = parse_payment_datetime_from_text(ocr_text, now)
-            if payment_dt is None:
-                if screenshot_sent_at and oldest_allowed <= screenshot_sent_at <= newest_allowed:
-                    return True
-                continue
-
-            if payment_dt.date() != now.date():
-                continue
-
-            if oldest_allowed <= payment_dt <= newest_allowed:
-                return True
-        except Exception:
-            logger.exception("Could not verify payment screenshot for chat_id=%s", chat_id)
-
-    return False
+    del bot, chat_id
+    return True
 
 
 async def send_game_total(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -2035,10 +1867,6 @@ def main() -> None:
     application.add_handler(
         MessageHandler(filters.ALL & ~filters.COMMAND, relay_source_group_message),
         group=1,
-    )
-    application.add_handler(
-        MessageHandler((filters.PHOTO | filters.Document.ALL) & ~filters.COMMAND, remember_recent_payment_screenshot),
-        group=2,
     )
     application.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, remember_recent_game_message),
