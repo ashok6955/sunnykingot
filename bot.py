@@ -603,8 +603,8 @@ def get_message_image_file_id(message) -> str:
 
 def is_game_ok_trigger_text(text: str) -> bool:
     normalized_text = str(text or "").lower()
-    has_game = bool(re.search(r"\bgame\b", normalized_text))
-    has_ok = bool(re.search(r"\bok\b", normalized_text))
+    has_game = bool(re.search(r"\bgame\b|गेम", normalized_text))
+    has_ok = bool(re.search(r"\bok\b|\boke\b|\bokay\b|ओके", normalized_text))
     return has_game and has_ok
 
 
@@ -1741,7 +1741,7 @@ def main() -> None:
     )
     application.add_handler(
         MessageHandler(
-            filters.TEXT & filters.Regex(r"(?i)^(?=.*\bgame\b)(?=.*\bok\b).*$"),
+            filters.TEXT & filters.Regex(r"(?i)^(?=.*(?:\bgame\b|गेम))(?=.*(?:\bok\b|\boke\b|\bokay\b|ओके)).*$"),
             send_game_ok_verified,
         )
     )
