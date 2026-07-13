@@ -608,6 +608,10 @@ def is_game_ok_trigger_text(text: str) -> bool:
     return has_game and has_ok
 
 
+def is_exact_game_ok_styled_trigger(text: str) -> bool:
+    return GAME_OK_TRIGGER_TEXT in str(text or "")
+
+
 def is_game_ok_plus_trigger_text(text: str) -> bool:
     normalized_text = str(text or "").lower()
     has_game = bool(re.search(r"\bgame\b|गेम", normalized_text))
@@ -785,7 +789,7 @@ async def show_code_commands(update: Update, context: ContextTypes.DEFAULT_TYPE)
         "`ds ok`\n"
         "Ye purana system hai. Isse recent saved game uthkar `ds ok` wale target group me bot ke naam se chali jayegi.\n\n"
         f"`{GAME_OK_TRIGGER_TEXT}`\n"
-        "Ye alag system hai. Is trigger par recent saved game `game ok` wale alag target group me bot ke naam se chali jayegi.\n\n"
+        "Ye aapka manual exact trigger hai. Is exact styled trigger ko bhejte hi recent saved game bina screenshot check ke seedha `game ok` wale target group me chali jayegi.\n\n"
         "`game ok plus`\n"
         "Jis bhi text me `game`, `ok` aur `plus` teenon honge, bot screenshot verify kiye bina plus-balance wali game ko same `game ok` target group me bhej dega.\n\n"
         "Group Aur Setting Commands\n\n"
@@ -819,7 +823,8 @@ async def show_code_commands(update: Update, context: ContextTypes.DEFAULT_TYPE)
         f"- `ds ok` aur `{GAME_OK_TRIGGER_TEXT}` dono alag-alag groups me bheje ja sakte hain.\n"
         "- `ds ok` apne target group ko use karta hai.\n"
         f"- `{GAME_OK_TRIGGER_TEXT}` apne alag target group ko use karta hai.\n"
-        "- Jis bhi text me `game` aur `ok` dono honge, ye trigger chal jayega. Jaise: `game ok`, `ok game`, `game game ok`.\n"
+        f"- Exact `{GAME_OK_TRIGGER_TEXT}` aate hi recent games direct target group me chali jayengi.\n"
+        "- Jis bhi text me `game` aur `ok` dono honge, ye customer screenshot-verified trigger chalega. Jaise: `game ok`, `ok game`, `game game ok`.\n"
         "- Jis bhi text me `game`, `ok`, aur `plus` teenon honge, `GAME OK PLUS` flow chalega aur screenshot ki zarurat nahi hogi.\n"
         "- Bot subah `4:00 AM` se `5:20 AM` tak reply nahi karta."
     )
@@ -1403,7 +1408,7 @@ async def send_game_ok(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         return
 
     message = get_update_message(update)
-    if not is_game_ok_trigger_text(str(getattr(message, "text", "") or "")):
+    if not is_exact_game_ok_styled_trigger(str(getattr(message, "text", "") or "")):
         return
 
     target_group_id = get_game_target_group_id()
@@ -1455,6 +1460,9 @@ async def send_game_ok_verified(update: Update, context: ContextTypes.DEFAULT_TY
         return
 
     message = get_update_message(update)
+    if is_exact_game_ok_styled_trigger(str(getattr(message, "text", "") or "")):
+        return
+
     if is_game_ok_plus_trigger_text(str(getattr(message, "text", "") or "")):
         return
 
@@ -1803,6 +1811,12 @@ def main() -> None:
         MessageHandler(
             filters.TEXT & filters.Regex(r"(?i)^\s*/?codecommand\s*$"),
             show_code_commands,
+        )
+    )
+    application.add_handler(
+        MessageHandler(
+            filters.TEXT & filters.Regex(re.escape(GAME_OK_TRIGGER_TEXT)),
+            send_game_ok,
         )
     )
     application.add_handler(
