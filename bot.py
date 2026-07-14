@@ -27,6 +27,14 @@ SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 BOT_TIMEZONE = ZoneInfo("Asia/Kolkata")
 QUIET_HOURS_START = time(4, 0)
 QUIET_HOURS_END = time(5, 20)
+GAME_BLOCK_WINDOWS = (
+    (time(14, 45), time(15, 15)),
+    (time(16, 20), time(16, 45)),
+    (time(17, 45), time(18, 20)),
+    (time(23, 20), time(23, 59, 59)),
+    (time(0, 0), time(0, 0, 59)),
+)
+TIME_OVER_TEXT = "TIME OVER"
 GAME_OK_TRIGGER_TEXT = "🎮 GAME OK ✔️✔️"
 HAPPY_HOURS_PATTERN = r"(?i)\bhappy\s*hour[s]?\b|\bhappy\s*hor[s]?\b|\bhappy\s*hourse\b"
 HAPPY_HOURS_TEXT = """╔══════════════════════════════╗
@@ -477,6 +485,26 @@ def is_quiet_hours() -> bool:
     return QUIET_HOURS_START <= current_time < QUIET_HOURS_END
 
 
+def is_game_block_window() -> bool:
+    current_time = datetime.now(BOT_TIMEZONE).time()
+    return any(start <= current_time <= end for start, end in GAME_BLOCK_WINDOWS)
+
+
+async def reject_game_during_block_window(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if is_quiet_hours():
+        return
+
+    message = get_update_message(update)
+    text = str(getattr(message, "text", "") or "").strip()
+    if not text or not looks_like_game_message(text):
+        return
+
+    if not is_game_block_window():
+        return
+
+    await reply_text(update, context, TIME_OVER_TEXT)
+
+
 async def send_with_retry(send_callable, *args, retries: int = 2, retry_delay: float = 1.0, **kwargs):
     last_error = None
     for attempt in range(retries + 1):
@@ -557,6 +585,8 @@ def is_game_ok_plus_trigger_text(text: str) -> bool:
 
 def should_relay_group_message(message) -> bool:
     text = str(getattr(message, "text", "") or "").strip()
+    if is_game_block_window():
+        return False
     return bool(text and looks_like_game_message(text))
 
 
@@ -1751,6 +1781,9 @@ async def remember_recent_game_message(update: Update, context: ContextTypes.DEF
     if not text:
         return
 
+    if is_game_block_window() and looks_like_game_message(text):
+        return
+
     memory = load_chat_memory()
     chat_key = str(message.chat_id)
 
@@ -1826,6 +1859,12 @@ def main() -> None:
                 r"(?i)(qr|\u0915\u094d\u092f\u0942\u0906\u0930|scanner|scan|barcode|bar\s*code)"
             ),
             send_next_qr,
+        )
+    )
+    application.add_handler(
+        MessageHandler(
+            filters.TEXT & ~filters.COMMAND,
+            reject_game_during_block_window,
         )
     )
     application.add_handler(
