@@ -573,6 +573,18 @@ def is_game_ok_trigger_text(text: str) -> bool:
     return has_game and has_ok
 
 
+def is_plain_ok_trigger_text(text: str) -> bool:
+    normalized_text = str(text or "").strip().lower()
+    return bool(re.fullmatch(r"(ok|oke|okay|à¤“à¤•à¥‡)[!. ]*", normalized_text))
+
+
+def is_ds_ok_trigger_text(text: str) -> bool:
+    normalized_text = str(text or "").lower()
+    has_ds = bool(re.search(r"\bds\b|\bdisawar\b", normalized_text))
+    has_ok = bool(re.search(r"\bok\b|\boke\b|\bokay\b|à¤“à¤•à¥‡", normalized_text))
+    return has_ds and has_ok
+
+
 def is_exact_game_ok_styled_trigger(text: str) -> bool:
     return GAME_OK_TRIGGER_TEXT in str(text or "")
 
@@ -1426,7 +1438,8 @@ async def send_game_ok_verified(update: Update, context: ContextTypes.DEFAULT_TY
     if is_game_ok_plus_trigger_text(str(getattr(message, "text", "") or "")):
         return
 
-    if not is_game_ok_trigger_text(str(getattr(message, "text", "") or "")):
+    message_text = str(getattr(message, "text", "") or "")
+    if not is_game_ok_trigger_text(message_text) and not is_plain_ok_trigger_text(message_text):
         return
 
     target_group_id = get_game_target_group_id()
@@ -1544,12 +1557,22 @@ async def handle_game_ok_text(update: Update, context: ContextTypes.DEFAULT_TYPE
     if is_exact_game_ok_styled_trigger(text):
         return
 
+    if is_ds_ok_trigger_text(text):
+        await send_ds_ok_banner(update, context)
+        context.chat_data["_handled_game_ok_message_id"] = getattr(message, "message_id", None)
+        return
+
     if is_game_ok_plus_trigger_text(text):
         await send_game_ok_plus(update, context)
         context.chat_data["_handled_game_ok_message_id"] = getattr(message, "message_id", None)
         return
 
     if is_game_ok_trigger_text(text):
+        await send_game_ok_verified(update, context)
+        context.chat_data["_handled_game_ok_message_id"] = getattr(message, "message_id", None)
+        return
+
+    if is_plain_ok_trigger_text(text):
         await send_game_ok_verified(update, context)
         context.chat_data["_handled_game_ok_message_id"] = getattr(message, "message_id", None)
 
@@ -1610,6 +1633,10 @@ async def send_ds_ok_banner(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     if is_quiet_hours():
         return
 
+    message = get_update_message(update)
+    if context.chat_data.get("_handled_game_ok_message_id") == getattr(message, "message_id", None):
+        return
+
     target_group_id = get_target_group_id()
     if target_group_id is None:
         await reply_text(
@@ -1620,7 +1647,6 @@ async def send_ds_ok_banner(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         )
         return
 
-    message = get_update_message(update)
     source_messages, used_reply_message = collect_game_source_messages(message)
     source_messages = [text for text in source_messages if text.strip()]
 
