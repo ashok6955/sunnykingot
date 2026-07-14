@@ -1568,6 +1568,12 @@ async def send_game_ok_plus(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 async def handle_game_ok_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message = get_update_message(update)
     text = str(getattr(message, "text", "") or "")
+    if text.strip():
+        logger.info(
+            "OK_HANDLER saw chat_id=%s text=%r",
+            getattr(message, "chat_id", None),
+            text[:200],
+        )
 
     if is_exact_game_ok_styled_trigger(text):
         return
@@ -1862,22 +1868,32 @@ async def remember_recent_game_message(update: Update, context: ContextTypes.DEF
     if not text:
         return
 
+    logger.info(
+        "MEMORY_HANDLER saw chat_id=%s text=%r",
+        getattr(message, "chat_id", None),
+        text[:200],
+    )
+
     if get_blocked_game_market_name() and looks_like_game_message(text):
+        logger.info("MEMORY_HANDLER blocked by market time chat_id=%s", getattr(message, "chat_id", None))
         return
 
     memory = load_chat_memory()
     chat_key = str(message.chat_id)
 
     if re.fullmatch(r"(?i)\s*(/total|total|ds\s+ok)\s*", text) or is_game_ok_trigger_text(text) or is_game_ok_plus_trigger_text(text):
+        logger.info("MEMORY_HANDLER skipped trigger text chat_id=%s", getattr(message, "chat_id", None))
         return
 
     if not looks_like_game_message(text):
+        logger.info("MEMORY_HANDLER not a game chat_id=%s", getattr(message, "chat_id", None))
         return
 
     existing_messages = get_recent_game_messages(memory, message.chat_id, limit=9)
     existing_messages.append(text)
     memory[chat_key] = existing_messages[-10:]
     save_chat_memory(memory)
+    logger.info("MEMORY_HANDLER saved game chat_id=%s count=%s", getattr(message, "chat_id", None), len(memory[chat_key]))
 
 
 def main() -> None:
