@@ -1962,7 +1962,8 @@ def main() -> None:
         MessageHandler(
             filters.TEXT & ~filters.COMMAND,
             reject_game_during_block_window,
-        )
+        ),
+        group=1,
     )
     application.add_handler(
         MessageHandler(
