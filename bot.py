@@ -1487,12 +1487,6 @@ async def send_game_ok_verified(update: Update, context: ContextTypes.DEFAULT_TY
             del memory[chat_key]
             save_chat_memory(memory)
 
-    payment_memory = load_payment_memory()
-    payment_chat_key = str(message.chat_id)
-    if payment_chat_key in payment_memory:
-        del payment_memory[payment_chat_key]
-        save_payment_memory(payment_memory)
-
 
 async def send_game_ok_plus(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if is_quiet_hours():
