@@ -1150,8 +1150,8 @@ async def send_next_qr(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         state[state_key] = (image_index + 1) % len(images)
         save_state(state)
 
-    with image_path.open("rb") as image_file:
-        await reply_photo(update, context, image_file)
+    image_bytes = image_path.read_bytes()
+    await reply_photo(update, context, image_bytes)
 
 
 async def send_chart_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1167,8 +1167,8 @@ async def send_chart_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         )
         return
 
-    with chart_image.open("rb") as image_file:
-        await reply_photo(update, context, image_file)
+    image_bytes = chart_image.read_bytes()
+    await reply_photo(update, context, image_bytes)
 
 
 async def send_happy_hours(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1440,8 +1440,15 @@ async def send_game_ok_verified(update: Update, context: ContextTypes.DEFAULT_TY
     if not is_game_ok_trigger_text(message_text) and not is_plain_ok_trigger_text(message_text):
         return
 
+    logger.info(
+        "GAME_OK trigger matched chat_id=%s text=%r",
+        getattr(message, "chat_id", None),
+        message_text[:200],
+    )
+
     target_group_id = get_game_target_group_id()
     if target_group_id is None:
+        logger.info("GAME_OK target group missing chat_id=%s", getattr(message, "chat_id", None))
         await reply_text(
             update,
             context,
@@ -1452,6 +1459,12 @@ async def send_game_ok_verified(update: Update, context: ContextTypes.DEFAULT_TY
 
     source_messages, used_reply_message = collect_game_source_messages(message)
     source_messages = [text for text in source_messages if text.strip()]
+    logger.info(
+        "GAME_OK source lookup chat_id=%s count=%s used_reply=%s",
+        getattr(message, "chat_id", None),
+        len(source_messages),
+        used_reply_message,
+    )
 
     if not source_messages:
         await reply_text(
@@ -1464,6 +1477,11 @@ async def send_game_ok_verified(update: Update, context: ContextTypes.DEFAULT_TY
 
     invalid_messages = [text for text in source_messages if not looks_like_game_message(text)]
     if invalid_messages:
+        logger.info(
+            "GAME_OK invalid source chat_id=%s invalid_count=%s",
+            getattr(message, "chat_id", None),
+            len(invalid_messages),
+        )
         await reply_text(
             update,
             context,
@@ -1474,8 +1492,15 @@ async def send_game_ok_verified(update: Update, context: ContextTypes.DEFAULT_TY
 
     payment_verified = await is_recent_valid_payment_screenshot(context.bot, message.chat_id)
     if not payment_verified:
+        logger.info("GAME_OK payment verification failed chat_id=%s", getattr(message, "chat_id", None))
         return
 
+    logger.info(
+        "GAME_OK sending success chat_id=%s target_group_id=%s messages=%s",
+        getattr(message, "chat_id", None),
+        target_group_id,
+        len(source_messages),
+    )
     await reply_text(update, context, GAME_OK_SUCCESS_TEXT)
     for source_text in source_messages:
         await send_with_retry(context.bot.send_message, chat_id=target_group_id, text=source_text)
@@ -1620,9 +1645,15 @@ async def send_ds_ok_banner(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         return
 
     message = get_update_message(update)
+    logger.info(
+        "DS_OK trigger matched chat_id=%s text=%r",
+        getattr(message, "chat_id", None),
+        str(getattr(message, "text", "") or "")[:200],
+    )
 
     target_group_id = get_target_group_id()
     if target_group_id is None:
+        logger.info("DS_OK target group missing chat_id=%s", getattr(message, "chat_id", None))
         await reply_text(
             update,
             context,
@@ -1633,6 +1664,12 @@ async def send_ds_ok_banner(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
     source_messages, used_reply_message = collect_game_source_messages(message)
     source_messages = [text for text in source_messages if text.strip()]
+    logger.info(
+        "DS_OK source lookup chat_id=%s count=%s used_reply=%s",
+        getattr(message, "chat_id", None),
+        len(source_messages),
+        used_reply_message,
+    )
 
     if not source_messages:
         await reply_text(
@@ -1645,6 +1682,11 @@ async def send_ds_ok_banner(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
     invalid_messages = [text for text in source_messages if not looks_like_game_message(text)]
     if invalid_messages:
+        logger.info(
+            "DS_OK invalid source chat_id=%s invalid_count=%s",
+            getattr(message, "chat_id", None),
+            len(invalid_messages),
+        )
         await reply_text(
             update,
             context,
@@ -1653,6 +1695,12 @@ async def send_ds_ok_banner(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         )
         return
 
+    logger.info(
+        "DS_OK sending success chat_id=%s target_group_id=%s messages=%s",
+        getattr(message, "chat_id", None),
+        target_group_id,
+        len(source_messages),
+    )
     await reply_text(update, context, GAME_OK_SUCCESS_TEXT)
     for source_text in source_messages:
         await send_with_retry(context.bot.send_message, chat_id=target_group_id, text=source_text)
