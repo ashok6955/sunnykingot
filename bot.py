@@ -28,13 +28,12 @@ BOT_TIMEZONE = ZoneInfo("Asia/Kolkata")
 QUIET_HOURS_START = time(4, 0)
 QUIET_HOURS_END = time(5, 20)
 GAME_BLOCK_WINDOWS = (
-    (time(14, 45), time(15, 15)),
-    (time(16, 20), time(16, 45)),
-    (time(17, 45), time(18, 20)),
-    (time(23, 20), time(23, 59, 59)),
-    (time(0, 0), time(0, 0, 59)),
+    ("Delhi Bazar", time(14, 45), time(15, 15)),
+    ("Shree Ganesh", time(16, 20), time(16, 45)),
+    ("Faridabad", time(17, 45), time(18, 20)),
+    ("Gali", time(23, 20), time(23, 59, 59)),
+    ("Gali", time(0, 0), time(0, 5)),
 )
-TIME_OVER_TEXT = "TIME OVER"
 GAME_OK_TRIGGER_TEXT = "🎮 GAME OK ✔️✔️"
 HAPPY_HOURS_PATTERN = r"(?i)\bhappy\s*hour[s]?\b|\bhappy\s*hor[s]?\b|\bhappy\s*hourse\b"
 HAPPY_HOURS_TEXT = """╔══════════════════════════════╗
@@ -485,9 +484,12 @@ def is_quiet_hours() -> bool:
     return QUIET_HOURS_START <= current_time < QUIET_HOURS_END
 
 
-def is_game_block_window() -> bool:
+def get_blocked_game_market_name() -> str | None:
     current_time = datetime.now(BOT_TIMEZONE).time()
-    return any(start <= current_time <= end for start, end in GAME_BLOCK_WINDOWS)
+    for market_name, start, end in GAME_BLOCK_WINDOWS:
+        if start <= current_time <= end:
+            return market_name
+    return None
 
 
 async def reject_game_during_block_window(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -499,10 +501,11 @@ async def reject_game_during_block_window(update: Update, context: ContextTypes.
     if not text or not looks_like_game_message(text):
         return
 
-    if not is_game_block_window():
+    blocked_market_name = get_blocked_game_market_name()
+    if not blocked_market_name:
         return
 
-    await reply_text(update, context, TIME_OVER_TEXT)
+    await reply_text(update, context, f"{blocked_market_name} TIME OVER")
 
 
 async def send_with_retry(send_callable, *args, retries: int = 2, retry_delay: float = 1.0, **kwargs):
@@ -585,7 +588,7 @@ def is_game_ok_plus_trigger_text(text: str) -> bool:
 
 def should_relay_group_message(message) -> bool:
     text = str(getattr(message, "text", "") or "").strip()
-    if is_game_block_window():
+    if get_blocked_game_market_name():
         return False
     return bool(text and looks_like_game_message(text))
 
@@ -1781,7 +1784,7 @@ async def remember_recent_game_message(update: Update, context: ContextTypes.DEF
     if not text:
         return
 
-    if is_game_block_window() and looks_like_game_message(text):
+    if get_blocked_game_market_name() and looks_like_game_message(text):
         return
 
     memory = load_chat_memory()
