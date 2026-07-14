@@ -31,6 +31,7 @@ GAME_BLOCK_WINDOWS = (
     ("Delhi Bazar", time(14, 45), time(15, 15)),
     ("Shree Ganesh", time(16, 20), time(16, 45)),
     ("Faridabad", time(17, 45), time(18, 20)),
+    ("Ghaziabad", time(21, 20), time(22, 0)),
     ("Gali", time(23, 20), time(23, 59, 59)),
     ("Gali", time(0, 0), time(0, 5)),
 )
@@ -1437,7 +1438,7 @@ async def send_game_ok_verified(update: Update, context: ContextTypes.DEFAULT_TY
         return
 
     message_text = str(getattr(message, "text", "") or "")
-    if not is_game_ok_trigger_text(message_text) and not is_plain_ok_trigger_text(message_text):
+    if not is_game_ok_trigger_text(message_text):
         return
 
     logger.info(
@@ -1589,10 +1590,6 @@ async def handle_game_ok_text(update: Update, context: ContextTypes.DEFAULT_TYPE
     if is_game_ok_trigger_text(text):
         await send_game_ok_verified(update, context)
         return
-
-    if is_plain_ok_trigger_text(text):
-        await send_game_ok_verified(update, context)
-
 
 async def send_game_ok_manual_banner(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if is_quiet_hours():
