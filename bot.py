@@ -1419,6 +1419,8 @@ async def send_game_ok_verified(update: Update, context: ContextTypes.DEFAULT_TY
         return
 
     message = get_update_message(update)
+    if context.chat_data.get("_handled_game_ok_message_id") == getattr(message, "message_id", None):
+        return
     if is_exact_game_ok_styled_trigger(str(getattr(message, "text", "") or "")):
         return
 
@@ -1487,6 +1489,8 @@ async def send_game_ok_plus(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         return
 
     message = get_update_message(update)
+    if context.chat_data.get("_handled_game_ok_message_id") == getattr(message, "message_id", None):
+        return
     if not is_game_ok_plus_trigger_text(str(getattr(message, "text", "") or "")):
         return
 
@@ -1532,6 +1536,23 @@ async def send_game_ok_plus(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         if chat_key in memory:
             del memory[chat_key]
             save_chat_memory(memory)
+
+
+async def handle_game_ok_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    message = get_update_message(update)
+    text = str(getattr(message, "text", "") or "")
+
+    if is_exact_game_ok_styled_trigger(text):
+        return
+
+    if is_game_ok_plus_trigger_text(text):
+        await send_game_ok_plus(update, context)
+        context.chat_data["_handled_game_ok_message_id"] = getattr(message, "message_id", None)
+        return
+
+    if is_game_ok_trigger_text(text):
+        await send_game_ok_verified(update, context)
+        context.chat_data["_handled_game_ok_message_id"] = getattr(message, "message_id", None)
 
 
 async def send_game_ok_manual_banner(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1886,6 +1907,12 @@ def main() -> None:
         MessageHandler(
             filters.TEXT & filters.Regex(re.escape(GAME_OK_TRIGGER_TEXT)),
             send_game_ok_manual_banner,
+        )
+    )
+    application.add_handler(
+        MessageHandler(
+            filters.TEXT & ~filters.COMMAND,
+            handle_game_ok_text,
         )
     )
     application.add_handler(
