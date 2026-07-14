@@ -1430,8 +1430,6 @@ async def send_game_ok_verified(update: Update, context: ContextTypes.DEFAULT_TY
         return
 
     message = get_update_message(update)
-    if context.chat_data.get("_handled_game_ok_message_id") == getattr(message, "message_id", None):
-        return
     if is_exact_game_ok_styled_trigger(str(getattr(message, "text", "") or "")):
         return
 
@@ -1501,8 +1499,6 @@ async def send_game_ok_plus(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         return
 
     message = get_update_message(update)
-    if context.chat_data.get("_handled_game_ok_message_id") == getattr(message, "message_id", None):
-        return
     if not is_game_ok_plus_trigger_text(str(getattr(message, "text", "") or "")):
         return
 
@@ -1559,22 +1555,18 @@ async def handle_game_ok_text(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     if is_ds_ok_trigger_text(text):
         await send_ds_ok_banner(update, context)
-        context.chat_data["_handled_game_ok_message_id"] = getattr(message, "message_id", None)
         return
 
     if is_game_ok_plus_trigger_text(text):
         await send_game_ok_plus(update, context)
-        context.chat_data["_handled_game_ok_message_id"] = getattr(message, "message_id", None)
         return
 
     if is_game_ok_trigger_text(text):
         await send_game_ok_verified(update, context)
-        context.chat_data["_handled_game_ok_message_id"] = getattr(message, "message_id", None)
         return
 
     if is_plain_ok_trigger_text(text):
         await send_game_ok_verified(update, context)
-        context.chat_data["_handled_game_ok_message_id"] = getattr(message, "message_id", None)
 
 
 async def send_game_ok_manual_banner(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1634,8 +1626,6 @@ async def send_ds_ok_banner(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         return
 
     message = get_update_message(update)
-    if context.chat_data.get("_handled_game_ok_message_id") == getattr(message, "message_id", None):
-        return
 
     target_group_id = get_target_group_id()
     if target_group_id is None:
