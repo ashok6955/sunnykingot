@@ -12,7 +12,7 @@ from telegram import ChatPermissions, Update
 from telegram.error import TimedOut
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, TypeHandler, filters
 
-from game_total import build_game_total_reply, looks_like_game_message as base_looks_like_game_message
+from game_total import build_game_total_reply, looks_like_game_message
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -75,7 +75,6 @@ GAME_OK_SUCCESS_TEXT = """✨ GAME OK ✅
 
 💸 Rate : 10 × 1000
 🤖 Bot Beta 1"""
-STRICT_GAME_TEXT_PATTERN = re.compile(r"(?s)(?:.*\b(?:[1-9][0-9]?|100)\b){2}.*")
 
 
 logging.basicConfig(
@@ -92,13 +91,6 @@ group_lock_task: asyncio.Task | None = None
 def natural_sort_key(file_path: Path) -> list[int | str]:
     parts = re.split(r"(\d+)", file_path.name.lower())
     return [int(part) if part.isdigit() else part for part in parts]
-
-
-def looks_like_game_message(value: str) -> bool:
-    text = str(value or "").strip()
-    if not text:
-        return False
-    return bool(STRICT_GAME_TEXT_PATTERN.search(text) or base_looks_like_game_message(text))
 
 
 def load_state() -> dict[str, int]:
