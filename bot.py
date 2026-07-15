@@ -8,9 +8,9 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import httpx
-from telegram import ChatPermissions, Update
+from telegram import CallbackQuery, ChatPermissions, InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.error import TimedOut
-from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, TypeHandler, filters
+from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes, MessageHandler, TypeHandler, filters
 
 from game_total import build_game_total_reply, looks_like_game_message
 
@@ -37,6 +37,10 @@ GAME_BLOCK_WINDOWS = (
 )
 GAME_OK_TRIGGER_TEXT = "🎮 GAME OK ✔️✔️"
 HAPPY_HOURS_PATTERN = r"(?i)\bhappy\s*hour[s]?\b|\bhappy\s*hor[s]?\b|\bhappy\s*hourse\b"
+QUICK_ACTION_CHART = "quick:chart"
+QUICK_ACTION_QR = "quick:qr"
+QUICK_ACTION_GAME_OK = "quick:game_ok"
+QUICK_ACTION_DS_OK = "quick:ds_ok"
 HAPPY_HOURS_TEXT = """╔══════════════════════════════╗
       🤖 TELEGRAM HAPPY HOURS BETA 🤖
            💸 10×1000 FULL RATE 💸
@@ -726,6 +730,32 @@ async def reply_photo(update: Update, context: ContextTypes.DEFAULT_TYPE, photo)
         context.bot.send_photo,
         chat_id=message.chat_id,
         photo=photo,
+        **get_business_kwargs(update),
+    )
+
+
+def build_game_quick_actions_markup() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("Chart dekhne ke liye dabaye", callback_data=QUICK_ACTION_CHART)],
+            [InlineKeyboardButton("QR lene ke liye dabaye", callback_data=QUICK_ACTION_QR)],
+            [InlineKeyboardButton("Game OK ke liye dabaye", callback_data=QUICK_ACTION_GAME_OK)],
+            [InlineKeyboardButton("DS OK ke liye dabaye", callback_data=QUICK_ACTION_DS_OK)],
+        ]
+    )
+
+
+async def send_game_quick_actions(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    message = get_update_message(update)
+    if not getattr(message, "message_id", None):
+        return
+
+    await send_with_retry(
+        context.bot.send_message,
+        chat_id=message.chat_id,
+        text="Neeche button dabaye:",
+        reply_to_message_id=message.message_id,
+        reply_markup=build_game_quick_actions_markup(),
         **get_business_kwargs(update),
     )
 
@@ -1566,6 +1596,53 @@ async def send_game_ok_plus(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             save_chat_memory(memory)
 
 
+async def send_game_ok_from_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if is_quiet_hours():
+        return
+
+    message = get_update_message(update)
+    target_group_id = get_game_target_group_id()
+    if target_group_id is None:
+        await reply_text(
+            update,
+            context,
+            f"`{GAME_OK_TRIGGER_TEXT}` target group set nahi hai. Pehle `/setgametargetgroup -1004304577201` ya target group ke andar `/setgametargetgroup` likho.",
+            parse_mode="Markdown",
+        )
+        return
+
+    source_messages, used_reply_message = collect_game_source_messages(message)
+    source_messages = [text for text in source_messages if text.strip()]
+
+    if not source_messages:
+        await reply_text(
+            update,
+            context,
+            "Koi recent game message nahi mila. Pehle number wale game message bhejo.",
+        )
+        return
+
+    invalid_messages = [text for text in source_messages if not looks_like_game_message(text)]
+    if invalid_messages:
+        await reply_text(
+            update,
+            context,
+            "Recent saved message game format me nahi mila. Number wala game message bhejo.",
+        )
+        return
+
+    await reply_text(update, context, GAME_OK_SUCCESS_TEXT)
+    for source_text in source_messages:
+        await send_with_retry(context.bot.send_message, chat_id=target_group_id, text=source_text)
+
+    if not used_reply_message:
+        memory = load_chat_memory()
+        chat_key = str(message.chat_id)
+        if chat_key in memory:
+            del memory[chat_key]
+            save_chat_memory(memory)
+
+
 async def handle_game_ok_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message = get_update_message(update)
     text = str(getattr(message, "text", "") or "")
@@ -1632,6 +1709,53 @@ async def send_game_ok_manual_banner(update: Update, context: ContextTypes.DEFAU
         return
 
     await reply_text(update, context, GAME_OK_TRIGGER_TEXT)
+    for source_text in source_messages:
+        await send_with_retry(context.bot.send_message, chat_id=target_group_id, text=source_text)
+
+    if not used_reply_message:
+        memory = load_chat_memory()
+        chat_key = str(message.chat_id)
+        if chat_key in memory:
+            del memory[chat_key]
+            save_chat_memory(memory)
+
+
+async def send_ds_ok_from_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if is_quiet_hours():
+        return
+
+    message = get_update_message(update)
+    target_group_id = get_target_group_id()
+    if target_group_id is None:
+        await reply_text(
+            update,
+            context,
+            "Target group set nahi hai. Pehle `/settargetgroup -1004304577201` ya target group ke andar `/settargetgroup` likho.",
+            parse_mode="Markdown",
+        )
+        return
+
+    source_messages, used_reply_message = collect_game_source_messages(message)
+    source_messages = [text for text in source_messages if text.strip()]
+
+    if not source_messages:
+        await reply_text(
+            update,
+            context,
+            "Koi recent game message nahi mila. Pehle number wale game message bhejo ya unme se kisi message par reply karke `ds ok` likho.",
+        )
+        return
+
+    invalid_messages = [text for text in source_messages if not looks_like_game_message(text)]
+    if invalid_messages:
+        await reply_text(
+            update,
+            context,
+            "Recent saved message game format me nahi mila. Number wala game message bhejo ya game message par reply karke `ds ok` likho.",
+        )
+        return
+
+    await reply_text(update, context, GAME_OK_SUCCESS_TEXT)
     for source_text in source_messages:
         await send_with_retry(context.bot.send_message, chat_id=target_group_id, text=source_text)
 
@@ -1765,6 +1889,30 @@ async def send_ds_ok(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
             save_chat_memory(memory)
 
 
+async def handle_quick_action_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query: CallbackQuery | None = getattr(update, "callback_query", None)
+    if query is None:
+        return
+
+    await query.answer()
+    action = str(getattr(query, "data", "") or "").strip()
+
+    if action == QUICK_ACTION_CHART:
+        await send_chart_image(update, context)
+        return
+
+    if action == QUICK_ACTION_QR:
+        await send_next_qr(update, context)
+        return
+
+    if action == QUICK_ACTION_GAME_OK:
+        await send_game_ok_from_button(update, context)
+        return
+
+    if action == QUICK_ACTION_DS_OK:
+        await send_ds_ok_from_button(update, context)
+
+
 async def relay_source_group_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if is_quiet_hours():
         return
@@ -1891,6 +2039,7 @@ async def remember_recent_game_message(update: Update, context: ContextTypes.DEF
     memory[chat_key] = existing_messages[-10:]
     save_chat_memory(memory)
     logger.info("MEMORY_HANDLER saved game chat_id=%s count=%s", getattr(message, "chat_id", None), len(memory[chat_key]))
+    await send_game_quick_actions(update, context)
 
 
 def main() -> None:
@@ -1913,6 +2062,7 @@ def main() -> None:
     application.add_error_handler(log_error)
 
     application.add_handler(TypeHandler(Update, log_incoming_update), group=-1)
+    application.add_handler(CallbackQueryHandler(handle_quick_action_callback, pattern=r"^quick:"))
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("codecommand", show_code_commands))
     application.add_handler(CommandHandler("groupid", send_group_id))
