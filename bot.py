@@ -23,10 +23,12 @@ CHAT_MEMORY_FILE = BASE_DIR / "chat_memory.json"
 SETTINGS_FILE = BASE_DIR / "bot_settings.json"
 RELAY_STATE_FILE = BASE_DIR / "relay_state.json"
 GROUP_LOCK_STATE_FILE = BASE_DIR / "group_lock_state.json"
+BUTTON_SESSION_STATE_FILE = BASE_DIR / "button_session_state.json"
 SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 BOT_TIMEZONE = ZoneInfo("Asia/Kolkata")
 QUIET_HOURS_START = time(4, 0)
 QUIET_HOURS_END = time(5, 20)
+BUTTON_SESSION_GAP = timedelta(minutes=30)
 GAME_BLOCK_WINDOWS = (
     ("Delhi Bazar", time(14, 45), time(15, 15)),
     ("Shree Ganesh", time(16, 20), time(16, 45)),
@@ -119,6 +121,51 @@ def save_state(state: dict[str, int]) -> None:
         json.dumps(state, indent=2, sort_keys=True),
         encoding="utf-8",
     )
+
+
+def load_button_session_state() -> dict[str, str]:
+    if not BUTTON_SESSION_STATE_FILE.exists():
+        return {}
+
+    try:
+        data = json.loads(BUTTON_SESSION_STATE_FILE.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        logger.warning("Could not read button session state file. Starting with empty state.")
+        return {}
+
+    if not isinstance(data, dict):
+        return {}
+
+    return {str(chat_id): str(value).strip() for chat_id, value in data.items() if str(value).strip()}
+
+
+def save_button_session_state(state: dict[str, str]) -> None:
+    BUTTON_SESSION_STATE_FILE.write_text(
+        json.dumps(state, indent=2, sort_keys=True, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+
+def build_button_session_key(message) -> str:
+    return f"{getattr(message, 'business_connection_id', '')}:{getattr(message, 'chat_id', '')}"
+
+
+def should_show_quick_actions(message, now: datetime | None = None) -> bool:
+    session_key = build_button_session_key(message)
+    state = load_button_session_state()
+    last_sent_at = parse_iso_datetime(state.get(session_key, ""))
+    current_time = now or datetime.now(BOT_TIMEZONE)
+    if last_sent_at is None:
+        return True
+    return current_time - last_sent_at >= BUTTON_SESSION_GAP
+
+
+def mark_quick_actions_sent(message, now: datetime | None = None) -> None:
+    session_key = build_button_session_key(message)
+    state = load_button_session_state()
+    sent_at = (now or datetime.now(BOT_TIMEZONE)).astimezone(BOT_TIMEZONE).isoformat()
+    state[session_key] = sent_at
+    save_button_session_state(state)
 
 
 def load_chat_memory() -> dict[str, list[str]]:
@@ -753,6 +800,15 @@ async def send_game_quick_actions(update: Update, context: ContextTypes.DEFAULT_
     if not getattr(message, "message_id", None):
         return
 
+    message_time = getattr(message, "date", None)
+    if isinstance(message_time, datetime):
+        message_time = message_time.astimezone(BOT_TIMEZONE)
+    else:
+        message_time = datetime.now(BOT_TIMEZONE)
+
+    if not should_show_quick_actions(message, message_time):
+        return
+
     await send_with_retry(
         context.bot.send_message,
         chat_id=message.chat_id,
@@ -761,6 +817,7 @@ async def send_game_quick_actions(update: Update, context: ContextTypes.DEFAULT_
         reply_markup=build_game_quick_actions_markup(),
         **get_business_kwargs(update),
     )
+    mark_quick_actions_sent(message, message_time)
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -2022,26 +2079,27 @@ async def remember_recent_game_message(update: Update, context: ContextTypes.DEF
         text[:200],
     )
 
-    if get_blocked_game_market_name() and looks_like_game_message(text):
+    is_game_text = looks_like_game_message(text)
+
+    if get_blocked_game_market_name() and is_game_text:
         logger.info("MEMORY_HANDLER blocked by market time chat_id=%s", getattr(message, "chat_id", None))
         return
-
-    memory = load_chat_memory()
-    chat_key = str(message.chat_id)
 
     if re.fullmatch(r"(?i)\s*(/total|total|ds\s+ok)\s*", text) or is_game_ok_trigger_text(text) or is_game_ok_plus_trigger_text(text):
         logger.info("MEMORY_HANDLER skipped trigger text chat_id=%s", getattr(message, "chat_id", None))
         return
 
-    if not looks_like_game_message(text):
-        logger.info("MEMORY_HANDLER not a game chat_id=%s", getattr(message, "chat_id", None))
-        return
+    if is_game_text:
+        memory = load_chat_memory()
+        chat_key = str(message.chat_id)
+        existing_messages = get_recent_game_messages(memory, message.chat_id, limit=9)
+        existing_messages.append(text)
+        memory[chat_key] = existing_messages[-10:]
+        save_chat_memory(memory)
+        logger.info("MEMORY_HANDLER saved game chat_id=%s count=%s", getattr(message, "chat_id", None), len(memory[chat_key]))
+    else:
+        logger.info("MEMORY_HANDLER non-game text chat_id=%s", getattr(message, "chat_id", None))
 
-    existing_messages = get_recent_game_messages(memory, message.chat_id, limit=9)
-    existing_messages.append(text)
-    memory[chat_key] = existing_messages[-10:]
-    save_chat_memory(memory)
-    logger.info("MEMORY_HANDLER saved game chat_id=%s count=%s", getattr(message, "chat_id", None), len(memory[chat_key]))
     await send_game_quick_actions(update, context)
 
 
