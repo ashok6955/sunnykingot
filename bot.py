@@ -76,10 +76,13 @@ Telegram Happy Hours Beta पर
 ━━━━━━━━━━━━━━━━━━━━━━━━━━"""
 
 
-GAME_OK_SUCCESS_TEXT = """✨ GAME OK ✅
+GAME_OK_SUCCESS_TEXT = """✦══════════════════════✦
+        ✨ GAME OK ✅
 
-💸 Rate : 10 × 1000
-🤖 Bot Beta 1"""
+     💸 Rate : 10 × 1000
+
+        🤖 Bot Beta 2
+✦══════════════════════✦"""
 
 
 logging.basicConfig(
