@@ -1231,8 +1231,7 @@ async def send_next_qr(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         )
         return
 
-    message = get_update_message(update)
-    state_key = f"{getattr(message, 'business_connection_id', '')}:{message.chat_id}"
+    state_key = "global_qr_index"
 
     async with state_lock:
         state = load_state()
