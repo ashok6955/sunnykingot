@@ -468,12 +468,6 @@ def clear_processed_game_memory(chat_id: int, source_messages: list[str], used_r
     if not existing_messages:
         return
 
-    if not used_reply_message:
-        if chat_key in memory:
-            del memory[chat_key]
-            save_chat_memory(memory)
-        return
-
     remaining_messages = list(existing_messages)
     for source_text in source_messages:
         cleaned_source = str(source_text or "").strip()
@@ -1552,8 +1546,8 @@ def collect_game_source_messages(message) -> tuple[list[str], bool, int | None]:
         return ([source_text] if source_text else []), True, reply_message_id
 
     memory = load_chat_memory()
-    recent_messages = get_recent_game_messages(memory, message.chat_id, limit=1)
-    return recent_messages[-1:] if recent_messages else [], False, None
+    recent_messages = get_recent_game_messages(memory, message.chat_id)
+    return recent_messages if recent_messages else [], False, None
 
 
 async def process_game_approval(
