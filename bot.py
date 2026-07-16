@@ -38,54 +38,30 @@ GAME_BLOCK_WINDOWS = (
     ("Gali", time(23, 20), time(23, 59, 59)),
     ("Gali", time(0, 0), time(0, 5)),
 )
-GAME_OK_TRIGGER_TEXT = "🎮 GAME OK ✔️✔️"
+GAME_OK_TRIGGER_TEXT = "\U0001F3AE GAME OK \u2714\ufe0f\u2714\ufe0f"
 HAPPY_HOURS_PATTERN = r"(?i)\bhappy\s*hour[s]?\b|\bhappy\s*hor[s]?\b|\bhappy\s*hourse\b"
 QUICK_ACTION_CHART = "quick:chart"
 QUICK_ACTION_QR = "quick:qr"
 QUICK_ACTION_GAME_OK = "quick:game_ok"
 QUICK_ACTION_DS_OK = "quick:ds_ok"
-HAPPY_HOURS_TEXT = """╔══════════════════════════════╗
-      🤖 TELEGRAM HAPPY HOURS BETA 🤖
-           💸 10×1000 FULL RATE 💸
-╚══════════════════════════════╝
+HAPPY_HOURS_TEXT = (
+    "\U0001F916 TELEGRAM HAPPY HOURS BETA\n"
+    "\U0001F4B8 10\u00D71000 FULL RATE\n\n"
+    "Delhi Bazar  - 2:20 PM\n"
+    "Shree Ganesh - 3:40 PM\n"
+    "Faridabad    - 5:20 PM\n"
+    "Ghaziabad    - 8:30 PM\n"
+    "Gali         - 10:30 PM\n\n"
+    "Happy Hours khatam hone se pehle kaam bhejo."
+)
 
-🔥 HAPPY HOURS SPECIAL TIMING 🔥
-
-🕑 Delhi Bazar      ➜  2:20 PM
-🕞 Shree Ganesh     ➜  3:40 PM
-🕔 Faridabad        ➜  5:20 PM
-🕣 Ghaziabad        ➜  8:30 PM
-🕥 Gali             ➜  10:30 PM
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-🎉 इन बताए गए टाइम तक
-Telegram Happy Hours Beta पर
-काम डालने पर मिलेगा
-
-💥 10×1000 का पूरा रेट 💥
-
-⚡ Happy Hours खत्म होने से पहले
-अपना काम तुरंत भेजें
-और ऑफर का पूरा फायदा उठाएँ
-
-🚀 Full Rate
-⚡ Fast Response
-🎯 Limited Time Offer
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-      🤖 TELEGRAM HAPPY HOURS BETA
-         💸 PLAY FAST • EARN BIG 💸
-━━━━━━━━━━━━━━━━━━━━━━━━━━"""
-
-
-GAME_OK_SUCCESS_TEXT = """✦══════════════════════✦
-        ✨ GAME OK ✅
-
-     💸 Rate : 10 × 1000
-
-        🤖 Bot Beta 2
-✦══════════════════════✦"""
+GAME_OK_SUCCESS_TEXT = (
+    "\u2726\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2726\n"
+    "        \u2728 GAME OK \u2705\n\n"
+    "     \U0001F4B8 Rate : 10 \u00D7 1000\n\n"
+    "        \U0001F916 Bot Beta 2\n"
+    "\u2726\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2726"
+)
 
 
 logging.basicConfig(
@@ -738,20 +714,20 @@ def is_image_document(message) -> bool:
 
 def is_game_ok_trigger_text(text: str) -> bool:
     normalized_text = str(text or "").lower()
-    has_game = bool(re.search(r"\bgame\b|गेम", normalized_text))
-    has_ok = bool(re.search(r"\bok\b|\boke\b|\bokay\b|ओके", normalized_text))
+    has_game = bool(re.search(r"\bgame\b|\u0917\u0947\u092e", normalized_text))
+    has_ok = bool(re.search(r"\bok\b|\boke\b|\bokay\b|\u0913\u0915\u0947", normalized_text))
     return has_game and has_ok
 
 
 def is_plain_ok_trigger_text(text: str) -> bool:
     normalized_text = str(text or "").strip().lower()
-    return bool(re.fullmatch(r"(ok|oke|okay|à¤“à¤•à¥‡)[!. ]*", normalized_text))
+    return bool(re.fullmatch(r"(ok|oke|okay|\u0913\u0915\u0947)[!. ]*", normalized_text))
 
 
 def is_ds_ok_trigger_text(text: str) -> bool:
     normalized_text = str(text or "").lower()
     has_ds = bool(re.search(r"\bds\b|\bdisawar\b", normalized_text))
-    has_ok = bool(re.search(r"\bok\b|\boke\b|\bokay\b|à¤“à¤•à¥‡", normalized_text))
+    has_ok = bool(re.search(r"\bok\b|\boke\b|\bokay\b|\u0913\u0915\u0947", normalized_text))
     return has_ds and has_ok
 
 
@@ -761,9 +737,9 @@ def is_exact_game_ok_styled_trigger(text: str) -> bool:
 
 def is_game_ok_plus_trigger_text(text: str) -> bool:
     normalized_text = str(text or "").lower()
-    has_game = bool(re.search(r"\bgame\b|गेम", normalized_text))
-    has_ok = bool(re.search(r"\bok\b|\boke\b|\bokay\b|ओके", normalized_text))
-    has_plus = bool(re.search(r"\bplus\b|प्लस", normalized_text))
+    has_game = bool(re.search(r"\bgame\b|\u0917\u0947\u092e", normalized_text))
+    has_ok = bool(re.search(r"\bok\b|\boke\b|\bokay\b|\u0913\u0915\u0947", normalized_text))
+    has_plus = bool(re.search(r"\bplus\b|\u092a\u094d\u0932\u0938", normalized_text))
     return has_game and has_ok and has_plus
 
 
@@ -1476,7 +1452,7 @@ def parse_payment_datetime_from_text(ocr_text: str, reference_now: datetime) -> 
 
 def looks_like_payment_ocr_text(ocr_text: str) -> bool:
     normalized_text = re.sub(r"\s+", " ", ocr_text).lower()
-    has_amount = bool(re.search(r"(?:rs|inr|₹)\s*\d{1,6}|\d{1,6}\s*(?:rs|inr)", normalized_text))
+    has_amount = bool(re.search(r"(?:rs|inr|\u20b9)\s*\d{1,6}|\d{1,6}\s*(?:rs|inr)", normalized_text))
     has_payment_keyword = any(
         keyword in normalized_text
         for keyword in ("paytm", "phonepe", "gpay", "google pay", "upi", "ref. no", "ref no", "paid", "success")
@@ -1507,7 +1483,7 @@ def parse_iso_datetime(value: str) -> datetime | None:
 def looks_like_payment_ocr_text(ocr_text: str) -> bool:
     normalized_text = re.sub(r"\s+", " ", ocr_text).lower()
     has_amount = bool(
-        re.search(r"(?:rs|inr|₹|â‚¹)\s*\d{1,6}|\d{1,6}\s*(?:rs|inr)|\b\d{1,6}\b", normalized_text)
+        re.search(r"(?:rs|inr|\u20b9|\u20b9)\s*\d{1,6}|\d{1,6}\s*(?:rs|inr)|\b\d{1,6}\b", normalized_text)
     )
     has_payment_keyword = any(
         keyword in normalized_text
@@ -1576,7 +1552,8 @@ def collect_game_source_messages(message) -> tuple[list[str], bool, int | None]:
         return ([source_text] if source_text else []), True, reply_message_id
 
     memory = load_chat_memory()
-    return get_recent_game_messages(memory, message.chat_id), False, None
+    recent_messages = get_recent_game_messages(memory, message.chat_id, limit=1)
+    return recent_messages[-1:] if recent_messages else [], False, None
 
 
 async def process_game_approval(
@@ -1659,7 +1636,7 @@ async def send_game_ok(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         )
         return
 
-    await reply_text(update, context, "GAME OK ✔")
+    await reply_text(update, context, "GAME OK \u2714")
     for source_text in source_messages:
         await send_with_retry(context.bot.send_message, chat_id=target_group_id, text=source_text)
 
@@ -1780,43 +1757,10 @@ async def send_game_ok_from_button(update: Update, context: ContextTypes.DEFAULT
         update,
         context,
         target_group_id=target_group_id,
-        success_text="GAME OK âœ”",
+        success_text=GAME_OK_SUCCESS_TEXT,
         no_message_text=f"Koi recent game message nahi mila. Pehle number wale game message bhejo ya unme se kisi message par reply karke `{GAME_OK_TRIGGER_TEXT}` likho.",
         invalid_message_text=f"Recent saved message game format me nahi mila. Number wala game message bhejo ya game message par reply karke `{GAME_OK_TRIGGER_TEXT}` likho.",
     )
-    return
-
-    source_messages, used_reply_message, reply_message_id = collect_game_source_messages(message)
-    source_messages = [text for text in source_messages if text.strip()]
-
-    if not source_messages:
-        await reply_text(
-            update,
-            context,
-            "Koi recent game message nahi mila. Pehle number wale game message bhejo.",
-        )
-        return
-
-    invalid_messages = [text for text in source_messages if not looks_like_game_message(text)]
-    if invalid_messages:
-        await reply_text(
-            update,
-            context,
-            "Recent saved message game format me nahi mila. Number wala game message bhejo.",
-        )
-        return
-
-    await reply_text(update, context, GAME_OK_SUCCESS_TEXT)
-    for source_text in source_messages:
-        await send_with_retry(context.bot.send_message, chat_id=target_group_id, text=source_text)
-
-    if not used_reply_message:
-        memory = load_chat_memory()
-        chat_key = str(message.chat_id)
-        if chat_key in memory:
-            del memory[chat_key]
-            save_chat_memory(memory)
-
 
 async def handle_game_ok_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message = get_update_message(update)
@@ -1865,45 +1809,10 @@ async def send_game_ok_manual_banner(update: Update, context: ContextTypes.DEFAU
         update,
         context,
         target_group_id=target_group_id,
-        success_text=GAME_OK_SUCCESS_TEXT,
-        no_message_text="Koi recent game message nahi mila. Pehle number wale game message bhejo.",
-        invalid_message_text="Recent saved message game format me nahi mila. Number wala game message bhejo.",
+        success_text=GAME_OK_TRIGGER_TEXT,
+        no_message_text=f"Koi recent game message nahi mila. Pehle number wale game message bhejo ya unme se kisi message par reply karke `{GAME_OK_TRIGGER_TEXT}` likho.",
+        invalid_message_text=f"Recent saved message game format me nahi mila. Number wala game message bhejo ya game message par reply karke `{GAME_OK_TRIGGER_TEXT}` likho.",
     )
-    return
-
-    source_messages, used_reply_message, reply_message_id = collect_game_source_messages(message)
-    source_messages = [text for text in source_messages if text.strip()]
-
-    if not source_messages:
-        await reply_text(
-            update,
-            context,
-            f"Koi recent game message nahi mila. Pehle number wale game message bhejo ya unme se kisi message par reply karke `{GAME_OK_TRIGGER_TEXT}` likho.",
-            parse_mode="Markdown",
-        )
-        return
-
-    invalid_messages = [text for text in source_messages if not looks_like_game_message(text)]
-    if invalid_messages:
-        await reply_text(
-            update,
-            context,
-            f"Recent saved message game format me nahi mila. Number wala game message bhejo ya game message par reply karke `{GAME_OK_TRIGGER_TEXT}` likho.",
-            parse_mode="Markdown",
-        )
-        return
-
-    await reply_text(update, context, GAME_OK_TRIGGER_TEXT)
-    for source_text in source_messages:
-        await send_with_retry(context.bot.send_message, chat_id=target_group_id, text=source_text)
-
-    if not used_reply_message:
-        memory = load_chat_memory()
-        chat_key = str(message.chat_id)
-        if chat_key in memory:
-            del memory[chat_key]
-            save_chat_memory(memory)
-
 
 async def send_ds_ok_from_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if is_quiet_hours():
@@ -2031,7 +1940,7 @@ async def send_ds_ok(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         )
         return
 
-    await reply_text(update, context, "DISAWAR GAME OK ✔")
+    await reply_text(update, context, "DISAWAR GAME OK \u2714")
     for source_text in source_messages:
         await send_with_retry(context.bot.send_message, chat_id=target_group_id, text=source_text)
 
@@ -2293,13 +2202,13 @@ def main() -> None:
     )
     application.add_handler(
         MessageHandler(
-            filters.TEXT & filters.Regex(r"(?i)^(?=.*(?:\bgame\b|गेम))(?=.*(?:\bok\b|\boke\b|\bokay\b|ओके))(?=.*(?:\bplus\b|प्लस)).*$"),
+            filters.TEXT & filters.Regex(r"(?i)^(?=.*(?:\bgame\b|\u0917\u0947\u092e))(?=.*(?:\bok\b|\boke\b|\bokay\b|\u0913\u0915\u0947))(?=.*(?:\bplus\b|\u092a\u094d\u0932\u0938)).*$"),
             send_game_ok_plus,
         )
     )
     application.add_handler(
         MessageHandler(
-            filters.TEXT & filters.Regex(r"(?i)^(?=.*(?:\bgame\b|गेम))(?=.*(?:\bok\b|\boke\b|\bokay\b|ओके)).*$"),
+            filters.TEXT & filters.Regex(r"(?i)^(?=.*(?:\bgame\b|\u0917\u0947\u092e))(?=.*(?:\bok\b|\boke\b|\bokay\b|\u0913\u0915\u0947)).*$"),
             send_game_ok_verified,
         )
     )
@@ -2336,3 +2245,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
