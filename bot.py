@@ -24,6 +24,7 @@ SETTINGS_FILE = BASE_DIR / "bot_settings.json"
 RELAY_STATE_FILE = BASE_DIR / "relay_state.json"
 GROUP_LOCK_STATE_FILE = BASE_DIR / "group_lock_state.json"
 BUTTON_SESSION_STATE_FILE = BASE_DIR / "button_session_state.json"
+APPROVAL_STATE_FILE = BASE_DIR / "approval_state.json"
 SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 BOT_TIMEZONE = ZoneInfo("Asia/Kolkata")
 QUIET_HOURS_START = time(4, 0)
@@ -141,6 +142,48 @@ def load_button_session_state() -> dict[str, str]:
 
 def save_button_session_state(state: dict[str, str]) -> None:
     BUTTON_SESSION_STATE_FILE.write_text(
+        json.dumps(state, indent=2, sort_keys=True, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+
+def load_approval_state() -> dict[str, dict[str, str | list[int]]]:
+    if not APPROVAL_STATE_FILE.exists():
+        return {}
+
+    try:
+        data = json.loads(APPROVAL_STATE_FILE.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        logger.warning("Could not read approval state file. Starting with empty state.")
+        return {}
+
+    if not isinstance(data, dict):
+        return {}
+
+    approval_state: dict[str, dict[str, str | list[int]]] = {}
+    for chat_key, raw_value in data.items():
+        if not isinstance(chat_key, str) or not isinstance(raw_value, dict):
+            continue
+
+        last_signature = str(raw_value.get("last_signature", "") or "").strip()
+        recent_reply_ids_raw = raw_value.get("recent_reply_ids", [])
+        recent_reply_ids = []
+        if isinstance(recent_reply_ids_raw, list):
+            for item in recent_reply_ids_raw:
+                parsed_item = parse_chat_id(item)
+                if parsed_item is not None:
+                    recent_reply_ids.append(int(parsed_item))
+
+        approval_state[chat_key] = {
+            "last_signature": last_signature,
+            "recent_reply_ids": recent_reply_ids[-100:],
+        }
+
+    return approval_state
+
+
+def save_approval_state(state: dict[str, dict[str, str | list[int]]]) -> None:
+    APPROVAL_STATE_FILE.write_text(
         json.dumps(state, indent=2, sort_keys=True, ensure_ascii=False),
         encoding="utf-8",
     )
@@ -395,6 +438,78 @@ def get_owner_user_id() -> int | None:
 def get_recent_game_messages(memory: dict[str, list[str]], chat_id: int, limit: int = 10) -> list[str]:
     messages = memory.get(str(chat_id), [])
     return [message for message in messages if message.strip()][-limit:]
+
+
+def build_approval_signature(source_messages: list[str], reply_message_id: int | None = None) -> str:
+    if reply_message_id is not None:
+        return f"reply:{reply_message_id}"
+    return "batch:" + "\n---\n".join(text.strip() for text in source_messages if text.strip())
+
+
+def is_duplicate_approval(message, source_messages: list[str], reply_message_id: int | None = None) -> bool:
+    chat_key = build_button_session_key(message)
+    approval_state = load_approval_state()
+    chat_state = approval_state.get(chat_key, {})
+
+    if reply_message_id is not None:
+        recent_reply_ids = chat_state.get("recent_reply_ids", [])
+        if isinstance(recent_reply_ids, list) and int(reply_message_id) in recent_reply_ids:
+            return True
+
+    signature = build_approval_signature(source_messages, reply_message_id)
+    last_signature = str(chat_state.get("last_signature", "") or "").strip()
+    return bool(signature and signature == last_signature)
+
+
+def mark_approval_sent(message, source_messages: list[str], reply_message_id: int | None = None) -> None:
+    chat_key = build_button_session_key(message)
+    approval_state = load_approval_state()
+    chat_state = approval_state.get(chat_key, {})
+
+    recent_reply_ids = chat_state.get("recent_reply_ids", [])
+    if not isinstance(recent_reply_ids, list):
+        recent_reply_ids = []
+    normalized_reply_ids = []
+    for item in recent_reply_ids:
+        parsed_item = parse_chat_id(item)
+        if parsed_item is not None:
+            normalized_reply_ids.append(int(parsed_item))
+
+    if reply_message_id is not None:
+        normalized_reply_ids.append(int(reply_message_id))
+
+    approval_state[chat_key] = {
+        "last_signature": build_approval_signature(source_messages, reply_message_id),
+        "recent_reply_ids": normalized_reply_ids[-100:],
+    }
+    save_approval_state(approval_state)
+
+
+def clear_processed_game_memory(chat_id: int, source_messages: list[str], used_reply_message: bool) -> None:
+    memory = load_chat_memory()
+    chat_key = str(chat_id)
+    existing_messages = memory.get(chat_key, [])
+    if not existing_messages:
+        return
+
+    if not used_reply_message:
+        if chat_key in memory:
+            del memory[chat_key]
+            save_chat_memory(memory)
+        return
+
+    remaining_messages = list(existing_messages)
+    for source_text in source_messages:
+        cleaned_source = str(source_text or "").strip()
+        if cleaned_source in remaining_messages:
+            remaining_messages.remove(cleaned_source)
+
+    if remaining_messages:
+        memory[chat_key] = remaining_messages[-10:]
+    elif chat_key in memory:
+        del memory[chat_key]
+
+    save_chat_memory(memory)
 
 
 def build_locked_permissions() -> ChatPermissions:
@@ -1453,14 +1568,55 @@ async def send_game_total(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     await reply_text(update, context, reply_text_value)
 
 
-def collect_game_source_messages(message) -> tuple[list[str], bool]:
+def collect_game_source_messages(message) -> tuple[list[str], bool, int | None]:
     reply_to_message = getattr(message, "reply_to_message", None)
     if reply_to_message and getattr(reply_to_message, "text", None):
         source_text = str(reply_to_message.text or "").strip()
-        return ([source_text] if source_text else []), True
+        reply_message_id = parse_chat_id(getattr(reply_to_message, "message_id", None))
+        return ([source_text] if source_text else []), True, reply_message_id
 
     memory = load_chat_memory()
-    return get_recent_game_messages(memory, message.chat_id), False
+    return get_recent_game_messages(memory, message.chat_id), False, None
+
+
+async def process_game_approval(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    target_group_id: int,
+    success_text: str,
+    no_message_text: str,
+    invalid_message_text: str,
+    require_payment_verification: bool = False,
+) -> None:
+    message = get_update_message(update)
+    source_messages, used_reply_message, reply_message_id = collect_game_source_messages(message)
+    source_messages = [text for text in source_messages if text.strip()]
+
+    if not source_messages:
+        await reply_text(update, context, no_message_text, parse_mode="Markdown")
+        return
+
+    invalid_messages = [text for text in source_messages if not looks_like_game_message(text)]
+    if invalid_messages:
+        await reply_text(update, context, invalid_message_text, parse_mode="Markdown")
+        return
+
+    if require_payment_verification:
+        payment_verified = await is_recent_valid_payment_screenshot(context.bot, message.chat_id)
+        if not payment_verified:
+            return
+
+    if is_duplicate_approval(message, source_messages, reply_message_id):
+        await reply_text(update, context, "Ye game pehle hi ok ho chuki hai.")
+        return
+
+    await reply_text(update, context, success_text)
+    for source_text in source_messages:
+        await send_with_retry(context.bot.send_message, chat_id=target_group_id, text=source_text)
+
+    mark_approval_sent(message, source_messages, reply_message_id)
+    clear_processed_game_memory(message.chat_id, source_messages, used_reply_message)
 
 
 async def send_game_ok(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1481,7 +1637,7 @@ async def send_game_ok(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         )
         return
 
-    source_messages, used_reply_message = collect_game_source_messages(message)
+    source_messages, used_reply_message, reply_message_id = collect_game_source_messages(message)
     source_messages = [text for text in source_messages if text.strip()]
 
     if not source_messages:
@@ -1546,61 +1702,15 @@ async def send_game_ok_verified(update: Update, context: ContextTypes.DEFAULT_TY
             parse_mode="Markdown",
         )
         return
-
-    source_messages, used_reply_message = collect_game_source_messages(message)
-    source_messages = [text for text in source_messages if text.strip()]
-    logger.info(
-        "GAME_OK source lookup chat_id=%s count=%s used_reply=%s",
-        getattr(message, "chat_id", None),
-        len(source_messages),
-        used_reply_message,
+    await process_game_approval(
+        update,
+        context,
+        target_group_id=target_group_id,
+        success_text=GAME_OK_SUCCESS_TEXT,
+        no_message_text=f"Koi recent game message nahi mila. Pehle number wale game message bhejo ya unme se kisi message par reply karke `{GAME_OK_TRIGGER_TEXT}` likho.",
+        invalid_message_text=f"Recent saved message game format me nahi mila. Number wala game message bhejo ya game message par reply karke `{GAME_OK_TRIGGER_TEXT}` likho.",
+        require_payment_verification=True,
     )
-
-    if not source_messages:
-        await reply_text(
-            update,
-            context,
-            f"Koi recent game message nahi mila. Pehle number wale game message bhejo ya unme se kisi message par reply karke `{GAME_OK_TRIGGER_TEXT}` likho.",
-            parse_mode="Markdown",
-        )
-        return
-
-    invalid_messages = [text for text in source_messages if not looks_like_game_message(text)]
-    if invalid_messages:
-        logger.info(
-            "GAME_OK invalid source chat_id=%s invalid_count=%s",
-            getattr(message, "chat_id", None),
-            len(invalid_messages),
-        )
-        await reply_text(
-            update,
-            context,
-            f"Recent saved message game format me nahi mila. Number wala game message bhejo ya game message par reply karke `{GAME_OK_TRIGGER_TEXT}` likho.",
-            parse_mode="Markdown",
-        )
-        return
-
-    payment_verified = await is_recent_valid_payment_screenshot(context.bot, message.chat_id)
-    if not payment_verified:
-        logger.info("GAME_OK payment verification failed chat_id=%s", getattr(message, "chat_id", None))
-        return
-
-    logger.info(
-        "GAME_OK sending success chat_id=%s target_group_id=%s messages=%s",
-        getattr(message, "chat_id", None),
-        target_group_id,
-        len(source_messages),
-    )
-    await reply_text(update, context, GAME_OK_SUCCESS_TEXT)
-    for source_text in source_messages:
-        await send_with_retry(context.bot.send_message, chat_id=target_group_id, text=source_text)
-
-    if not used_reply_message:
-        memory = load_chat_memory()
-        chat_key = str(message.chat_id)
-        if chat_key in memory:
-            del memory[chat_key]
-            save_chat_memory(memory)
 
 
 async def send_game_ok_plus(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1621,7 +1731,7 @@ async def send_game_ok_plus(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         )
         return
 
-    source_messages, used_reply_message = collect_game_source_messages(message)
+    source_messages, used_reply_message, reply_message_id = collect_game_source_messages(message)
     source_messages = [text for text in source_messages if text.strip()]
 
     if not source_messages:
@@ -1647,12 +1757,8 @@ async def send_game_ok_plus(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     for source_text in source_messages:
         await send_with_retry(context.bot.send_message, chat_id=target_group_id, text=source_text)
 
-    if not used_reply_message:
-        memory = load_chat_memory()
-        chat_key = str(message.chat_id)
-        if chat_key in memory:
-            del memory[chat_key]
-            save_chat_memory(memory)
+    mark_approval_sent(message, source_messages, reply_message_id)
+    clear_processed_game_memory(message.chat_id, source_messages, used_reply_message)
 
 
 async def send_game_ok_from_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1670,7 +1776,17 @@ async def send_game_ok_from_button(update: Update, context: ContextTypes.DEFAULT
         )
         return
 
-    source_messages, used_reply_message = collect_game_source_messages(message)
+    await process_game_approval(
+        update,
+        context,
+        target_group_id=target_group_id,
+        success_text="GAME OK âœ”",
+        no_message_text=f"Koi recent game message nahi mila. Pehle number wale game message bhejo ya unme se kisi message par reply karke `{GAME_OK_TRIGGER_TEXT}` likho.",
+        invalid_message_text=f"Recent saved message game format me nahi mila. Number wala game message bhejo ya game message par reply karke `{GAME_OK_TRIGGER_TEXT}` likho.",
+    )
+    return
+
+    source_messages, used_reply_message, reply_message_id = collect_game_source_messages(message)
     source_messages = [text for text in source_messages if text.strip()]
 
     if not source_messages:
@@ -1745,7 +1861,17 @@ async def send_game_ok_manual_banner(update: Update, context: ContextTypes.DEFAU
         )
         return
 
-    source_messages, used_reply_message = collect_game_source_messages(message)
+    await process_game_approval(
+        update,
+        context,
+        target_group_id=target_group_id,
+        success_text=GAME_OK_SUCCESS_TEXT,
+        no_message_text="Koi recent game message nahi mila. Pehle number wale game message bhejo.",
+        invalid_message_text="Recent saved message game format me nahi mila. Number wala game message bhejo.",
+    )
+    return
+
+    source_messages, used_reply_message, reply_message_id = collect_game_source_messages(message)
     source_messages = [text for text in source_messages if text.strip()]
 
     if not source_messages:
@@ -1794,7 +1920,18 @@ async def send_ds_ok_from_button(update: Update, context: ContextTypes.DEFAULT_T
         )
         return
 
-    source_messages, used_reply_message = collect_game_source_messages(message)
+    await process_game_approval(
+        update,
+        context,
+        target_group_id=target_group_id,
+        success_text=GAME_OK_SUCCESS_TEXT,
+        no_message_text=f"Koi recent game message nahi mila. Pehle number wale game message bhejo ya unme se kisi message par reply karke `{GAME_OK_TRIGGER_TEXT}` likho.",
+        invalid_message_text=f"Recent saved message game format me nahi mila. Number wala game message bhejo ya game message par reply karke `{GAME_OK_TRIGGER_TEXT}` likho.",
+        require_payment_verification=True,
+    )
+    return
+
+    source_messages, used_reply_message, reply_message_id = collect_game_source_messages(message)
     source_messages = [text for text in source_messages if text.strip()]
 
     if not source_messages:
@@ -1847,56 +1984,14 @@ async def send_ds_ok_banner(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             parse_mode="Markdown",
         )
         return
-
-    source_messages, used_reply_message = collect_game_source_messages(message)
-    source_messages = [text for text in source_messages if text.strip()]
-    logger.info(
-        "DS_OK source lookup chat_id=%s count=%s used_reply=%s",
-        getattr(message, "chat_id", None),
-        len(source_messages),
-        used_reply_message,
+    await process_game_approval(
+        update,
+        context,
+        target_group_id=target_group_id,
+        success_text=GAME_OK_SUCCESS_TEXT,
+        no_message_text="Koi recent game message nahi mila. Pehle number wale game message bhejo ya unme se kisi message par reply karke `ds ok` likho.",
+        invalid_message_text="Recent saved message game format me nahi mila. Number wala game message bhejo ya game message par reply karke `ds ok` likho.",
     )
-
-    if not source_messages:
-        await reply_text(
-            update,
-            context,
-            "Koi recent game message nahi mila. Pehle number wale game message bhejo ya unme se kisi message par reply karke `ds ok` likho.",
-            parse_mode="Markdown",
-        )
-        return
-
-    invalid_messages = [text for text in source_messages if not looks_like_game_message(text)]
-    if invalid_messages:
-        logger.info(
-            "DS_OK invalid source chat_id=%s invalid_count=%s",
-            getattr(message, "chat_id", None),
-            len(invalid_messages),
-        )
-        await reply_text(
-            update,
-            context,
-            "Recent saved message game format me nahi mila. Number wala game message bhejo ya game message par reply karke `ds ok` likho.",
-            parse_mode="Markdown",
-        )
-        return
-
-    logger.info(
-        "DS_OK sending success chat_id=%s target_group_id=%s messages=%s",
-        getattr(message, "chat_id", None),
-        target_group_id,
-        len(source_messages),
-    )
-    await reply_text(update, context, GAME_OK_SUCCESS_TEXT)
-    for source_text in source_messages:
-        await send_with_retry(context.bot.send_message, chat_id=target_group_id, text=source_text)
-
-    if not used_reply_message:
-        memory = load_chat_memory()
-        chat_key = str(message.chat_id)
-        if chat_key in memory:
-            del memory[chat_key]
-            save_chat_memory(memory)
 
 
 async def send_ds_ok(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1914,7 +2009,7 @@ async def send_ds_ok(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         return
 
     message = get_update_message(update)
-    source_messages, used_reply_message = collect_game_source_messages(message)
+    source_messages, used_reply_message, reply_message_id = collect_game_source_messages(message)
     source_messages = [text for text in source_messages if text.strip()]
 
     if not source_messages:
