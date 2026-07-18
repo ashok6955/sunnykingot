@@ -47,6 +47,7 @@ QUICK_ACTION_GAME_OK = "quick:game_ok"
 QUICK_ACTION_DS_OK = "quick:ds_ok"
 QUICK_ACTION_CASHBACK_95_5 = "quick:cashback_95_5"
 QUICK_ACTION_CASHBACK_90_10 = "quick:cashback_90_10"
+QUICK_ACTION_EXIT_MODE = "quick:exit_mode"
 HAPPY_HOURS_TEXT = (
     "\U0001F916 TELEGRAM HAPPY HOURS BETA\n"
     "\U0001F4B8 10\u00D71000 FULL RATE\n\n"
@@ -59,30 +60,24 @@ HAPPY_HOURS_TEXT = (
 )
 
 GAME_OK_SUCCESS_TEXT = (
-    "\u2726\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2726\n"
-    "        \u2728 GAME OK \u2705\n\n"
-    "     \U0001F4B8 Rate : 10 \u00D7 1000\n\n"
-    "        \U0001F916 Bot Beta 2\n"
-    "\u2726\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2726"
+    "GAME OK \u2705\n"
+    "RATE 10 x 1000\n"
+    "Bot Beta 3"
 )
 
 CASHBACK_95_5_PROMPT_TEXT = (
-    "╔════════════════════╗\n"
-    "💐 आपका स्वागत है 💐\n"
-    "95 के रेट • 5% कैशबैक सिस्टम\n"
-    "╚════════════════════╝\n\n"
-    "अपना पूरा काम डालिए, फिर यहां reply में `cashback total` या `cashback 1000` लिखिए.\n"
-    "आप अपनी total game का cashback ले सकते हो.\n"
-    "Cashback सुबह दिया जाएगा."
+    "\U0001F490 Aapka swagat hai 95/5 cashback system me.\n"
+    "95 ke rate par 5% cashback milega.\n"
+    "Apna pura kaam dalo, phir yahan reply me `cashback total` ya `cashback 1000` likho.\n"
+    "Aap apni total game ka cashback le sakte ho.\n"
+    "Cashback subah diya jayega."
 )
 CASHBACK_90_10_PROMPT_TEXT = (
-    "╔════════════════════╗\n"
-    "💐 आपका स्वागत है 💐\n"
-    "90 के रेट • 10% कैशबैक सिस्टम\n"
-    "╚════════════════════╝\n\n"
-    "अपना पूरा काम डालिए, फिर यहां reply में `cashback total` या `cashback 1000` लिखिए.\n"
-    "आप अपनी total game का cashback ले सकते हो.\n"
-    "Cashback सुबह दिया जाएगा."
+    "\U0001F490 Aapka swagat hai 90/10 cashback system me.\n"
+    "90 ke rate par 10% cashback milega.\n"
+    "Apna pura kaam dalo, phir yahan reply me `cashback total` ya `cashback 1000` likho.\n"
+    "Aap apni total game ka cashback le sakte ho.\n"
+    "Cashback subah diya jayega."
 )
 CASHBACK_95_5_SUCCESS_TEXT = "GAME OK \u2705\nCashback 95/5"
 CASHBACK_90_10_SUCCESS_TEXT = "GAME OK \u2705\nCashback 90/10"
@@ -1009,6 +1004,7 @@ def build_game_quick_actions_markup() -> InlineKeyboardMarkup:
             [InlineKeyboardButton("DS OK ke liye dabaye", callback_data=QUICK_ACTION_DS_OK)],
             [InlineKeyboardButton("Cashback 95/5 ke liye dabaye", callback_data=QUICK_ACTION_CASHBACK_95_5)],
             [InlineKeyboardButton("Cashback 90/10 ke liye dabaye", callback_data=QUICK_ACTION_CASHBACK_90_10)],
+            [InlineKeyboardButton("Exit karke main mode me aaye", callback_data=QUICK_ACTION_EXIT_MODE)],
         ]
     )
 
@@ -1943,7 +1939,6 @@ async def send_game_ok_verified(update: Update, context: ContextTypes.DEFAULT_TY
         no_message_text=f"Koi recent game message nahi mila. Pehle number wale game message bhejo ya unme se kisi message par reply karke `{GAME_OK_TRIGGER_TEXT}` likho.",
         invalid_message_text=f"Recent saved message game format me nahi mila. Number wala game message bhejo ya game message par reply karke `{GAME_OK_TRIGGER_TEXT}` likho.",
         require_payment_verification=True,
-        clear_cashback_mode_on_success=True,
     )
 
 
@@ -1994,7 +1989,6 @@ async def send_game_ok_plus(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
     mark_approval_sent(message, source_messages, reply_message_id)
     clear_processed_game_memory(message.chat_id, source_messages, used_reply_message)
-    clear_cashback_mode(message)
 
 
 async def send_game_ok_from_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -2020,7 +2014,6 @@ async def send_game_ok_from_button(update: Update, context: ContextTypes.DEFAULT
         success_text=success_text,
         no_message_text=f"Koi recent game message nahi mila. Pehle number wale game message bhejo ya unme se kisi message par reply karke `{GAME_OK_TRIGGER_TEXT}` likho.",
         invalid_message_text=f"Recent saved message game format me nahi mila. Number wala game message bhejo ya game message par reply karke `{GAME_OK_TRIGGER_TEXT}` likho.",
-        clear_cashback_mode_on_success=True,
     )
 
 async def handle_game_ok_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -2243,6 +2236,12 @@ async def handle_quick_action_callback(update: Update, context: ContextTypes.DEF
 
     if action == QUICK_ACTION_CASHBACK_90_10:
         await prompt_cashback_amount(update, context, "90_10")
+        return
+
+    if action == QUICK_ACTION_EXIT_MODE:
+        message = get_update_message(update)
+        clear_cashback_mode(message)
+        await reply_text(update, context, "Aap ab main mode me aa gaye ho. Ab jo button ya mode choose karoge, wahi system chalega.")
 
 
 async def relay_source_group_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
