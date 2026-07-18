@@ -8,7 +8,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import httpx
-from telegram import CallbackQuery, ChatPermissions, InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import CallbackQuery, ChatPermissions, ForceReply, InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.error import TimedOut
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes, MessageHandler, TypeHandler, filters
 
@@ -44,6 +44,7 @@ QUICK_ACTION_CHART = "quick:chart"
 QUICK_ACTION_QR = "quick:qr"
 QUICK_ACTION_GAME_OK = "quick:game_ok"
 QUICK_ACTION_DS_OK = "quick:ds_ok"
+QUICK_ACTION_CASHBACK = "quick:cashback"
 HAPPY_HOURS_TEXT = (
     "\U0001F916 TELEGRAM HAPPY HOURS BETA\n"
     "\U0001F4B8 10\u00D71000 FULL RATE\n\n"
@@ -62,6 +63,8 @@ GAME_OK_SUCCESS_TEXT = (
     "        \U0001F916 Bot Beta 2\n"
     "\u2726\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2726"
 )
+
+CASHBACK_PROMPT_TEXT = "Cashback ke liye apni game ka total amount reply me likho. Example: 1000 ya total 1000"
 
 
 logging.basicConfig(
@@ -737,6 +740,39 @@ def is_game_ok_plus_trigger_text(text: str) -> bool:
     return has_game and has_ok and has_plus
 
 
+def is_cashback_trigger_text(text: str) -> bool:
+    normalized_text = str(text or "").lower()
+    return bool(re.search(r"\bcash\s*back\b|\bcashback\b|\u0915\u0948\u0936\u092c\u0948\u0915", normalized_text))
+
+
+def parse_cashback_amount(text: str) -> int | None:
+    raw_text = str(text or "").strip()
+    if not raw_text:
+        return None
+
+    matches = re.findall(r"\d[\d,]*", raw_text)
+    if not matches:
+        return None
+
+    last_match = matches[-1].replace(",", "")
+    try:
+        amount = int(last_match)
+    except ValueError:
+        return None
+
+    return amount if amount > 0 else None
+
+
+def build_cashback_reply(amount: int) -> str:
+    cashback_amount = round(amount * 5 / 100)
+    return (
+        "\U0001F4B8 Cashback 5%\n\n"
+        f"Game Total: {amount}\n"
+        f"Cashback: {cashback_amount}\n\n"
+        f"Aapko {cashback_amount} cashback milega."
+    )
+
+
 def should_relay_group_message(message) -> bool:
     text = str(getattr(message, "text", "") or "").strip()
     if get_blocked_game_market_name():
@@ -876,6 +912,7 @@ def build_game_quick_actions_markup() -> InlineKeyboardMarkup:
             [InlineKeyboardButton("QR lene ke liye dabaye", callback_data=QUICK_ACTION_QR)],
             [InlineKeyboardButton("Game OK ke liye dabaye", callback_data=QUICK_ACTION_GAME_OK)],
             [InlineKeyboardButton("DS OK ke liye dabaye", callback_data=QUICK_ACTION_DS_OK)],
+            [InlineKeyboardButton("Cashback 5% ke liye dabaye", callback_data=QUICK_ACTION_CASHBACK)],
         ]
     )
 
@@ -937,6 +974,8 @@ async def show_code_commands(update: Update, context: ContextTypes.DEFAULT_TYPE)
         "Ye words likhne par bot chart image bhej dega.\n\n"
         "`happy hours`\n"
         "Ye likhne par bot stylish Happy Hours offer message bhej dega.\n\n"
+        "`cashback`\n"
+        "Ye likhne par bot reply-box me aapse game ka total amount mangega. Aap `1000` ya `total 1000` reply karoge to bot uska 5% cashback turant nikal dega.\n\n"
         "`/total`\n"
         "Agar aap kisi game message par reply karke ye command likhoge to us game ka total niklega. Reply na ho to latest saved game ka total niklega.\n\n"
         "`total`\n"
@@ -1351,6 +1390,50 @@ async def send_happy_hours(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         return
 
     await reply_text(update, context, HAPPY_HOURS_TEXT)
+
+
+async def prompt_cashback_amount(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if is_quiet_hours():
+        return
+
+    message = get_update_message(update)
+    await send_with_retry(
+        context.bot.send_message,
+        chat_id=message.chat_id,
+        text=CASHBACK_PROMPT_TEXT,
+        reply_to_message_id=getattr(message, "message_id", None),
+        reply_markup=ForceReply(selective=False, input_field_placeholder="Example: total 1000"),
+        **get_business_kwargs(update),
+    )
+
+
+async def handle_cashback_reply(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if is_quiet_hours():
+        return
+
+    message = get_update_message(update)
+    reply_to_message = getattr(message, "reply_to_message", None)
+    if not reply_to_message:
+        return
+
+    reply_text_value = str(getattr(reply_to_message, "text", "") or "").strip()
+    if reply_text_value != CASHBACK_PROMPT_TEXT:
+        return
+
+    reply_from = getattr(reply_to_message, "from_user", None)
+    if not getattr(reply_from, "is_bot", False):
+        return
+
+    amount = parse_cashback_amount(getattr(message, "text", "") or "")
+    if amount is None:
+        await reply_text(
+            update,
+            context,
+            "Cashback amount samajh nahi aaya. Sirf number bhejo, example: 1000 ya total 1000",
+        )
+        return
+
+    await reply_text(update, context, build_cashback_reply(amount))
 
 
 def get_recent_payment_items(
@@ -1968,6 +2051,10 @@ async def handle_quick_action_callback(update: Update, context: ContextTypes.DEF
 
     if action == QUICK_ACTION_DS_OK:
         await send_ds_ok_from_button(update, context)
+        return
+
+    if action == QUICK_ACTION_CASHBACK:
+        await prompt_cashback_amount(update, context)
 
 
 async def relay_source_group_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -2082,7 +2169,12 @@ async def remember_recent_game_message(update: Update, context: ContextTypes.DEF
         logger.info("MEMORY_HANDLER blocked by market time chat_id=%s", getattr(message, "chat_id", None))
         return
 
-    if re.fullmatch(r"(?i)\s*(/total|total|ds\s+ok)\s*", text) or is_game_ok_trigger_text(text) or is_game_ok_plus_trigger_text(text):
+    if (
+        re.fullmatch(r"(?i)\s*(/total|total|ds\s+ok)\s*", text)
+        or is_game_ok_trigger_text(text)
+        or is_game_ok_plus_trigger_text(text)
+        or is_cashback_trigger_text(text)
+    ):
         logger.info("MEMORY_HANDLER skipped trigger text chat_id=%s", getattr(message, "chat_id", None))
         return
 
@@ -2141,6 +2233,12 @@ def main() -> None:
     application.add_handler(CommandHandler("total", send_game_total))
     application.add_handler(
         MessageHandler(
+            filters.REPLY & filters.TEXT & ~filters.COMMAND,
+            handle_cashback_reply,
+        )
+    )
+    application.add_handler(
+        MessageHandler(
             filters.TEXT
             & filters.Regex(
                 r"(?i)(?:\bchart\b|\btime\b|\btiming\b|\u091a\u093e\u0930\u094d\u091f|\u091f\u093e\u0907\u092e|\u091f\u093e\u0907\u092e\u093f\u0902\u0917)"
@@ -2152,6 +2250,12 @@ def main() -> None:
         MessageHandler(
             filters.TEXT & filters.Regex(HAPPY_HOURS_PATTERN),
             send_happy_hours,
+        )
+    )
+    application.add_handler(
+        MessageHandler(
+            filters.TEXT & filters.Regex(r"(?i)\b(?:cash\s*back|cashback)\b|\u0915\u0948\u0936\u092c\u0948\u0915"),
+            prompt_cashback_amount,
         )
     )
     application.add_handler(
