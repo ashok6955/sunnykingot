@@ -44,7 +44,8 @@ QUICK_ACTION_CHART = "quick:chart"
 QUICK_ACTION_QR = "quick:qr"
 QUICK_ACTION_GAME_OK = "quick:game_ok"
 QUICK_ACTION_DS_OK = "quick:ds_ok"
-QUICK_ACTION_CASHBACK = "quick:cashback"
+QUICK_ACTION_CASHBACK_95_5 = "quick:cashback_95_5"
+QUICK_ACTION_CASHBACK_90_10 = "quick:cashback_90_10"
 HAPPY_HOURS_TEXT = (
     "\U0001F916 TELEGRAM HAPPY HOURS BETA\n"
     "\U0001F4B8 10\u00D71000 FULL RATE\n\n"
@@ -64,7 +65,8 @@ GAME_OK_SUCCESS_TEXT = (
     "\u2726\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2726"
 )
 
-CASHBACK_PROMPT_TEXT = "Cashback ke liye apni game ka total amount reply me likho. Example: 1000 ya total 1000"
+CASHBACK_95_5_PROMPT_TEXT = "Cashback 95/5 ke liye apni game ka total amount reply me likho. Example: 1000 ya total 1000"
+CASHBACK_90_10_PROMPT_TEXT = "Cashback 90/10 ke liye apni game ka total amount reply me likho. Example: 1000 ya total 1000"
 
 
 logging.basicConfig(
@@ -745,6 +747,23 @@ def is_cashback_trigger_text(text: str) -> bool:
     return bool(re.search(r"\bcash\s*back\b|\bcashback\b|\u0915\u0948\u0936\u092c\u0948\u0915", normalized_text))
 
 
+def detect_cashback_mode(text: str) -> str | None:
+    normalized_text = str(text or "").lower()
+    if not normalized_text.strip():
+        return None
+
+    if re.search(r"(95\s*/\s*5|95\s*ka\s*rate\s*5\s*%?)", normalized_text):
+        return "95_5"
+
+    if re.search(r"(90\s*/\s*10|10\s*%|10\s*percent|10\s*parsent)", normalized_text):
+        return "90_10"
+
+    if is_cashback_trigger_text(normalized_text):
+        return "95_5"
+
+    return None
+
+
 def parse_cashback_amount(text: str) -> int | None:
     raw_text = str(text or "").strip()
     if not raw_text:
@@ -763,10 +782,10 @@ def parse_cashback_amount(text: str) -> int | None:
     return amount if amount > 0 else None
 
 
-def build_cashback_reply(amount: int) -> str:
-    cashback_amount = round(amount * 5 / 100)
+def build_cashback_reply(amount: int, percent: int, title: str) -> str:
+    cashback_amount = round(amount * percent / 100)
     return (
-        "\U0001F4B8 Cashback 5%\n\n"
+        f"\U0001F4B8 {title}\n\n"
         f"Game Total: {amount}\n"
         f"Cashback: {cashback_amount}\n\n"
         f"Aapko {cashback_amount} cashback milega."
@@ -912,7 +931,8 @@ def build_game_quick_actions_markup() -> InlineKeyboardMarkup:
             [InlineKeyboardButton("QR lene ke liye dabaye", callback_data=QUICK_ACTION_QR)],
             [InlineKeyboardButton("Game OK ke liye dabaye", callback_data=QUICK_ACTION_GAME_OK)],
             [InlineKeyboardButton("DS OK ke liye dabaye", callback_data=QUICK_ACTION_DS_OK)],
-            [InlineKeyboardButton("Cashback 5% ke liye dabaye", callback_data=QUICK_ACTION_CASHBACK)],
+            [InlineKeyboardButton("Cashback 95/5 ke liye dabaye", callback_data=QUICK_ACTION_CASHBACK_95_5)],
+            [InlineKeyboardButton("Cashback 10% ke liye dabaye", callback_data=QUICK_ACTION_CASHBACK_90_10)],
         ]
     )
 
@@ -974,8 +994,10 @@ async def show_code_commands(update: Update, context: ContextTypes.DEFAULT_TYPE)
         "Ye words likhne par bot chart image bhej dega.\n\n"
         "`happy hours`\n"
         "Ye likhne par bot stylish Happy Hours offer message bhej dega.\n\n"
-        "`cashback`\n"
+        "`cashback` / `cashback 95/5`\n"
         "Ye likhne par bot reply-box me aapse game ka total amount mangega. Aap `1000` ya `total 1000` reply karoge to bot uska 5% cashback turant nikal dega.\n\n"
+        "`cashback 90/10`\n"
+        "Ye likhne par bot reply-box me aapse game ka total amount mangega aur bot uska 10% cashback nikal dega.\n\n"
         "`/total`\n"
         "Agar aap kisi game message par reply karke ye command likhoge to us game ka total niklega. Reply na ho to latest saved game ka total niklega.\n\n"
         "`total`\n"
@@ -1392,15 +1414,28 @@ async def send_happy_hours(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     await reply_text(update, context, HAPPY_HOURS_TEXT)
 
 
-async def prompt_cashback_amount(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+def get_cashback_prompt_text(mode: str) -> str:
+    return CASHBACK_90_10_PROMPT_TEXT if mode == "90_10" else CASHBACK_95_5_PROMPT_TEXT
+
+
+def get_cashback_percent(mode: str) -> int:
+    return 10 if mode == "90_10" else 5
+
+
+def get_cashback_title(mode: str) -> str:
+    return "Cashback 90/10" if mode == "90_10" else "Cashback 95/5"
+
+
+async def prompt_cashback_amount(update: Update, context: ContextTypes.DEFAULT_TYPE, mode: str = "95_5") -> None:
     if is_quiet_hours():
         return
 
     message = get_update_message(update)
+    prompt_text = get_cashback_prompt_text(mode)
     await send_with_retry(
         context.bot.send_message,
         chat_id=message.chat_id,
-        text=CASHBACK_PROMPT_TEXT,
+        text=prompt_text,
         reply_to_message_id=getattr(message, "message_id", None),
         reply_markup=ForceReply(selective=False, input_field_placeholder="Example: total 1000"),
         **get_business_kwargs(update),
@@ -1417,7 +1452,13 @@ async def handle_cashback_reply(update: Update, context: ContextTypes.DEFAULT_TY
         return
 
     reply_text_value = str(getattr(reply_to_message, "text", "") or "").strip()
-    if reply_text_value != CASHBACK_PROMPT_TEXT:
+    cashback_mode = None
+    if reply_text_value == CASHBACK_95_5_PROMPT_TEXT:
+        cashback_mode = "95_5"
+    elif reply_text_value == CASHBACK_90_10_PROMPT_TEXT:
+        cashback_mode = "90_10"
+
+    if cashback_mode is None:
         return
 
     reply_from = getattr(reply_to_message, "from_user", None)
@@ -1433,7 +1474,20 @@ async def handle_cashback_reply(update: Update, context: ContextTypes.DEFAULT_TY
         )
         return
 
-    await reply_text(update, context, build_cashback_reply(amount))
+    await reply_text(
+        update,
+        context,
+        build_cashback_reply(amount, get_cashback_percent(cashback_mode), get_cashback_title(cashback_mode)),
+    )
+
+
+async def handle_cashback_trigger(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if is_quiet_hours():
+        return
+
+    message = get_update_message(update)
+    mode = detect_cashback_mode(getattr(message, "text", "") or "") or "95_5"
+    await prompt_cashback_amount(update, context, mode)
 
 
 def get_recent_payment_items(
@@ -2053,8 +2107,12 @@ async def handle_quick_action_callback(update: Update, context: ContextTypes.DEF
         await send_ds_ok_from_button(update, context)
         return
 
-    if action == QUICK_ACTION_CASHBACK:
-        await prompt_cashback_amount(update, context)
+    if action == QUICK_ACTION_CASHBACK_95_5:
+        await prompt_cashback_amount(update, context, "95_5")
+        return
+
+    if action == QUICK_ACTION_CASHBACK_90_10:
+        await prompt_cashback_amount(update, context, "90_10")
 
 
 async def relay_source_group_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -2255,7 +2313,7 @@ def main() -> None:
     application.add_handler(
         MessageHandler(
             filters.TEXT & filters.Regex(r"(?i)\b(?:cash\s*back|cashback)\b|\u0915\u0948\u0936\u092c\u0948\u0915"),
-            prompt_cashback_amount,
+            handle_cashback_trigger,
         )
     )
     application.add_handler(
