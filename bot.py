@@ -66,8 +66,24 @@ GAME_OK_SUCCESS_TEXT = (
     "\u2726\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2726"
 )
 
-CASHBACK_95_5_PROMPT_TEXT = "Cashback 95/5 ke liye pehle apna pura kaam daalo, phir yahan reply me `cashback total` ya `cashback 1000` likho."
-CASHBACK_90_10_PROMPT_TEXT = "Cashback 90/10 ke liye pehle apna pura kaam daalo, phir yahan reply me `cashback total` ya `cashback 1000` likho."
+CASHBACK_95_5_PROMPT_TEXT = (
+    "╔════════════════════╗\n"
+    "💐 आपका स्वागत है 💐\n"
+    "95 के रेट • 5% कैशबैक सिस्टम\n"
+    "╚════════════════════╝\n\n"
+    "अपना पूरा काम डालिए, फिर यहां reply में `cashback total` या `cashback 1000` लिखिए.\n"
+    "आप अपनी total game का cashback ले सकते हो.\n"
+    "Cashback सुबह दिया जाएगा."
+)
+CASHBACK_90_10_PROMPT_TEXT = (
+    "╔════════════════════╗\n"
+    "💐 आपका स्वागत है 💐\n"
+    "90 के रेट • 10% कैशबैक सिस्टम\n"
+    "╚════════════════════╝\n\n"
+    "अपना पूरा काम डालिए, फिर यहां reply में `cashback total` या `cashback 1000` लिखिए.\n"
+    "आप अपनी total game का cashback ले सकते हो.\n"
+    "Cashback सुबह दिया जाएगा."
+)
 CASHBACK_95_5_SUCCESS_TEXT = "GAME OK \u2705\nCashback 95/5"
 CASHBACK_90_10_SUCCESS_TEXT = "GAME OK \u2705\nCashback 90/10"
 
@@ -1799,6 +1815,13 @@ async def process_game_approval(
     message = get_update_message(update)
     source_messages, used_reply_message, reply_message_id = collect_game_source_messages(message)
     source_messages = [text for text in source_messages if text.strip()]
+
+    if not used_reply_message:
+        initial_invalid_messages = [text for text in source_messages if not looks_like_game_message(text)]
+        if not source_messages or initial_invalid_messages or is_duplicate_approval(message, source_messages, reply_message_id):
+            await asyncio.sleep(0.8)
+            source_messages, used_reply_message, reply_message_id = collect_game_source_messages(message)
+            source_messages = [text for text in source_messages if text.strip()]
 
     if not source_messages:
         await reply_text(update, context, no_message_text, parse_mode="Markdown")
