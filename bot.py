@@ -66,10 +66,10 @@ GAME_OK_SUCCESS_TEXT = (
     "\u2726\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2726"
 )
 
-CASHBACK_95_5_PROMPT_TEXT = "Cashback 95/5 ke liye pehle apna pura kaam daalo, phir yahan reply me `total`, `1000`, ya `total 1000` likho."
-CASHBACK_90_10_PROMPT_TEXT = "Cashback 90/10 ke liye pehle apna pura kaam daalo, phir yahan reply me `total`, `1000`, ya `total 1000` likho."
-CASHBACK_95_5_SUCCESS_TEXT = "💸 Cashback 95/5 mode active hai.\nNormal 10×1000 rate nahi lagega."
-CASHBACK_90_10_SUCCESS_TEXT = "💸 Cashback 90/10 mode active hai.\nNormal 10×1000 rate nahi lagega."
+CASHBACK_95_5_PROMPT_TEXT = "Cashback 95/5 ke liye pehle apna pura kaam daalo, phir yahan reply me `cashback total` ya `cashback 1000` likho."
+CASHBACK_90_10_PROMPT_TEXT = "Cashback 90/10 ke liye pehle apna pura kaam daalo, phir yahan reply me `cashback total` ya `cashback 1000` likho."
+CASHBACK_95_5_SUCCESS_TEXT = "GAME OK \u2705\nCashback 95/5"
+CASHBACK_90_10_SUCCESS_TEXT = "GAME OK \u2705\nCashback 90/10"
 
 
 logging.basicConfig(
@@ -770,7 +770,12 @@ def is_game_ok_plus_trigger_text(text: str) -> bool:
 
 def is_cashback_trigger_text(text: str) -> bool:
     normalized_text = str(text or "").lower()
-    return bool(re.search(r"\bcash\s*back\b|\bcashback\b|\u0915\u0948\u0936\u092c\u0948\u0915", normalized_text))
+    return bool(
+        re.search(
+            r"\bcash\s*back\b|\bcashback\b|\bcashbak\b|\bcasback\b|\bcsback\b|\bcashbk\b|\bcsba\b|\u0915\u0948\u0936\u092c\u0948\u0915",
+            normalized_text,
+        )
+    )
 
 
 def detect_cashback_mode(text: str) -> str | None:
@@ -778,10 +783,10 @@ def detect_cashback_mode(text: str) -> str | None:
     if not normalized_text.strip():
         return None
 
-    if re.search(r"(cash\s*back|cashback|\u0915\u0948\u0936\u092c\u0948\u0915)", normalized_text) and re.search(r"(95\s*/\s*5|95\s*ka\s*rate\s*5\s*%?)", normalized_text):
+    if is_cashback_trigger_text(normalized_text) and re.search(r"(95\s*/\s*5|95\s*ka\s*rate\s*5\s*%?)", normalized_text):
         return "95_5"
 
-    if re.search(r"(cash\s*back|cashback|\u0915\u0948\u0936\u092c\u0948\u0915)", normalized_text) and re.search(r"(90\s*/\s*10|10\s*%|10\s*percent|10\s*parsent)", normalized_text):
+    if is_cashback_trigger_text(normalized_text) and re.search(r"(90\s*/\s*10|10\s*%|10\s*percent|10\s*parsent)", normalized_text):
         return "90_10"
 
     if is_cashback_trigger_text(normalized_text):
@@ -1050,9 +1055,9 @@ async def show_code_commands(update: Update, context: ContextTypes.DEFAULT_TYPE)
         "`happy hours`\n"
         "Ye likhne par bot stylish Happy Hours offer message bhej dega.\n\n"
         "`cashback` / `cashback 95/5`\n"
-        "Ye likhne par bot reply-box me aapse game ka total amount mangega. Aap `1000` ya `total 1000` reply karoge to bot uska 5% cashback turant nikal dega.\n\n"
+        "Ye likhne par bot reply-box me aapse game ka total amount mangega. Aap `cashback 1000` ya `cashback total` reply karoge to bot uska 5% cashback turant nikal dega.\n\n"
         "`cashback 90/10`\n"
-        "Ye likhne par bot reply-box me aapse game ka total amount mangega aur bot uska 10% cashback nikal dega.\n\n"
+        "Ye likhne par bot reply-box me aapse game ka total amount mangega aur bot uska 10% cashback nikal dega. Isme bhi `cashback 1000` ya `cashback total` likh sakte ho.\n\n"
         "`/total`\n"
         "Agar aap kisi game message par reply karke ye command likhoge to us game ka total niklega. Reply na ho to latest saved game ka total niklega.\n\n"
         "`total`\n"
@@ -1493,7 +1498,7 @@ async def prompt_cashback_amount(update: Update, context: ContextTypes.DEFAULT_T
         chat_id=message.chat_id,
         text=prompt_text,
         reply_to_message_id=getattr(message, "message_id", None),
-        reply_markup=ForceReply(selective=False, input_field_placeholder="Example: total 1000"),
+        reply_markup=ForceReply(selective=False, input_field_placeholder="Example: cashback total / cashback 1000"),
         **get_business_kwargs(update),
     )
 
@@ -1551,7 +1556,7 @@ async def handle_cashback_reply(update: Update, context: ContextTypes.DEFAULT_TY
         await reply_text(
             update,
             context,
-            "Cashback amount samajh nahi aaya. `1000`, `total 1000`, ya sirf `total` reply karo.",
+            "Cashback amount samajh nahi aaya. `cashback total`, `cashback 1000`, `total`, ya `1000` reply karo.",
         )
         return
 
@@ -1567,7 +1572,18 @@ async def handle_cashback_trigger(update: Update, context: ContextTypes.DEFAULT_
         return
 
     message = get_update_message(update)
-    mode = detect_cashback_mode(getattr(message, "text", "") or "") or "95_5"
+    message_text = getattr(message, "text", "") or ""
+    mode = detect_cashback_mode(message_text) or "95_5"
+    amount = resolve_cashback_amount_from_text_or_recent_games(message, message_text)
+    if amount is not None:
+        set_cashback_mode(message, mode)
+        await reply_text(
+            update,
+            context,
+            build_cashback_reply(amount, get_cashback_percent(mode), get_cashback_title(mode)),
+        )
+        return
+
     await prompt_cashback_amount(update, context, mode)
 
 
@@ -2402,7 +2418,7 @@ def main() -> None:
     )
     application.add_handler(
         MessageHandler(
-            filters.TEXT & filters.Regex(r"(?i)\b(?:cash\s*back|cashback)\b|\u0915\u0948\u0936\u092c\u0948\u0915"),
+            filters.TEXT & filters.Regex(r"(?i)\b(?:cash\s*back|cashback|cashbak|casback|csback|cashbk|csba)\b|\u0915\u0948\u0936\u092c\u0948\u0915"),
             handle_cashback_trigger,
         )
     )
