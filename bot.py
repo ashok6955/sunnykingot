@@ -25,6 +25,7 @@ RELAY_STATE_FILE = BASE_DIR / "relay_state.json"
 GROUP_LOCK_STATE_FILE = BASE_DIR / "group_lock_state.json"
 BUTTON_SESSION_STATE_FILE = BASE_DIR / "button_session_state.json"
 APPROVAL_STATE_FILE = BASE_DIR / "approval_state.json"
+CASHBACK_MODE_FILE = BASE_DIR / "cashback_mode.json"
 SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 BOT_TIMEZONE = ZoneInfo("Asia/Kolkata")
 QUIET_HOURS_START = time(4, 0)
@@ -67,6 +68,8 @@ GAME_OK_SUCCESS_TEXT = (
 
 CASHBACK_95_5_PROMPT_TEXT = "Cashback 95/5 ke liye apni game ka total amount reply me likho. Example: 1000 ya total 1000"
 CASHBACK_90_10_PROMPT_TEXT = "Cashback 90/10 ke liye apni game ka total amount reply me likho. Example: 1000 ya total 1000"
+CASHBACK_95_5_SUCCESS_TEXT = "💸 Cashback 95/5 mode active hai.\nNormal 10×1000 rate nahi lagega."
+CASHBACK_90_10_SUCCESS_TEXT = "💸 Cashback 90/10 mode active hai.\nNormal 10×1000 rate nahi lagega."
 
 
 logging.basicConfig(
@@ -123,6 +126,29 @@ def load_button_session_state() -> dict[str, str]:
 
 def save_button_session_state(state: dict[str, str]) -> None:
     BUTTON_SESSION_STATE_FILE.write_text(
+        json.dumps(state, indent=2, sort_keys=True, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+
+def load_cashback_mode_state() -> dict[str, str]:
+    if not CASHBACK_MODE_FILE.exists():
+        return {}
+
+    try:
+        data = json.loads(CASHBACK_MODE_FILE.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        logger.warning("Could not read cashback mode file. Starting with empty state.")
+        return {}
+
+    if not isinstance(data, dict):
+        return {}
+
+    return {str(key): str(value).strip() for key, value in data.items() if str(value).strip()}
+
+
+def save_cashback_mode_state(state: dict[str, str]) -> None:
+    CASHBACK_MODE_FILE.write_text(
         json.dumps(state, indent=2, sort_keys=True, ensure_ascii=False),
         encoding="utf-8",
     )
@@ -752,10 +778,10 @@ def detect_cashback_mode(text: str) -> str | None:
     if not normalized_text.strip():
         return None
 
-    if re.search(r"(95\s*/\s*5|95\s*ka\s*rate\s*5\s*%?)", normalized_text):
+    if re.search(r"(cash\s*back|cashback|\u0915\u0948\u0936\u092c\u0948\u0915)", normalized_text) and re.search(r"(95\s*/\s*5|95\s*ka\s*rate\s*5\s*%?)", normalized_text):
         return "95_5"
 
-    if re.search(r"(90\s*/\s*10|10\s*%|10\s*percent|10\s*parsent)", normalized_text):
+    if re.search(r"(cash\s*back|cashback|\u0915\u0948\u0936\u092c\u0948\u0915)", normalized_text) and re.search(r"(90\s*/\s*10|10\s*%|10\s*percent|10\s*parsent)", normalized_text):
         return "90_10"
 
     if is_cashback_trigger_text(normalized_text):
@@ -790,6 +816,35 @@ def build_cashback_reply(amount: int, percent: int, title: str) -> str:
         f"Cashback: {cashback_amount}\n\n"
         f"Aapko {cashback_amount} cashback milega."
     )
+
+
+def set_cashback_mode(message, mode: str) -> None:
+    state = load_cashback_mode_state()
+    state[build_button_session_key(message)] = mode
+    save_cashback_mode_state(state)
+
+
+def get_cashback_mode(message) -> str | None:
+    state = load_cashback_mode_state()
+    value = str(state.get(build_button_session_key(message), "") or "").strip()
+    return value or None
+
+
+def clear_cashback_mode(message) -> None:
+    state = load_cashback_mode_state()
+    session_key = build_button_session_key(message)
+    if session_key in state:
+        del state[session_key]
+        save_cashback_mode_state(state)
+
+
+def get_cashback_success_text_for_message(message) -> str | None:
+    mode = get_cashback_mode(message)
+    if mode == "90_10":
+        return CASHBACK_90_10_SUCCESS_TEXT
+    if mode == "95_5":
+        return CASHBACK_95_5_SUCCESS_TEXT
+    return None
 
 
 def should_relay_group_message(message) -> bool:
@@ -1696,6 +1751,7 @@ async def process_game_approval(
     no_message_text: str,
     invalid_message_text: str,
     require_payment_verification: bool = False,
+    clear_cashback_mode_on_success: bool = False,
 ) -> None:
     message = get_update_message(update)
     source_messages, used_reply_message, reply_message_id = collect_game_source_messages(message)
@@ -1725,6 +1781,8 @@ async def process_game_approval(
 
     mark_approval_sent(message, source_messages, reply_message_id)
     clear_processed_game_memory(message.chat_id, source_messages, used_reply_message)
+    if clear_cashback_mode_on_success:
+        clear_cashback_mode(message)
 
 
 async def send_game_ok(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1810,14 +1868,16 @@ async def send_game_ok_verified(update: Update, context: ContextTypes.DEFAULT_TY
             parse_mode="Markdown",
         )
         return
+    success_text = get_cashback_success_text_for_message(message) or GAME_OK_SUCCESS_TEXT
     await process_game_approval(
         update,
         context,
         target_group_id=target_group_id,
-        success_text=GAME_OK_SUCCESS_TEXT,
+        success_text=success_text,
         no_message_text=f"Koi recent game message nahi mila. Pehle number wale game message bhejo ya unme se kisi message par reply karke `{GAME_OK_TRIGGER_TEXT}` likho.",
         invalid_message_text=f"Recent saved message game format me nahi mila. Number wala game message bhejo ya game message par reply karke `{GAME_OK_TRIGGER_TEXT}` likho.",
         require_payment_verification=True,
+        clear_cashback_mode_on_success=True,
     )
 
 
@@ -1861,12 +1921,14 @@ async def send_game_ok_plus(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         )
         return
 
-    await reply_text(update, context, GAME_OK_SUCCESS_TEXT)
+    success_text = get_cashback_success_text_for_message(message) or GAME_OK_SUCCESS_TEXT
+    await reply_text(update, context, success_text)
     for source_text in source_messages:
         await send_with_retry(context.bot.send_message, chat_id=target_group_id, text=source_text)
 
     mark_approval_sent(message, source_messages, reply_message_id)
     clear_processed_game_memory(message.chat_id, source_messages, used_reply_message)
+    clear_cashback_mode(message)
 
 
 async def send_game_ok_from_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1884,13 +1946,15 @@ async def send_game_ok_from_button(update: Update, context: ContextTypes.DEFAULT
         )
         return
 
+    success_text = get_cashback_success_text_for_message(message) or GAME_OK_SUCCESS_TEXT
     await process_game_approval(
         update,
         context,
         target_group_id=target_group_id,
-        success_text=GAME_OK_SUCCESS_TEXT,
+        success_text=success_text,
         no_message_text=f"Koi recent game message nahi mila. Pehle number wale game message bhejo ya unme se kisi message par reply karke `{GAME_OK_TRIGGER_TEXT}` likho.",
         invalid_message_text=f"Recent saved message game format me nahi mila. Number wala game message bhejo ya game message par reply karke `{GAME_OK_TRIGGER_TEXT}` likho.",
+        clear_cashback_mode_on_success=True,
     )
 
 async def handle_game_ok_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
