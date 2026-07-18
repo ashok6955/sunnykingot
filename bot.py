@@ -1776,8 +1776,9 @@ def collect_game_source_messages(message) -> tuple[list[str], bool, int | None]:
     reply_to_message = getattr(message, "reply_to_message", None)
     if reply_to_message and getattr(reply_to_message, "text", None):
         source_text = str(reply_to_message.text or "").strip()
-        reply_message_id = parse_chat_id(getattr(reply_to_message, "message_id", None))
-        return ([source_text] if source_text else []), True, reply_message_id
+        if source_text and looks_like_game_message(source_text):
+            reply_message_id = parse_chat_id(getattr(reply_to_message, "message_id", None))
+            return [source_text], True, reply_message_id
 
     memory = load_chat_memory()
     recent_messages = get_recent_game_messages(memory, message.chat_id)
