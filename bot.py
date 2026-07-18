@@ -814,7 +814,7 @@ def build_cashback_reply(amount: int, percent: int, title: str) -> str:
         f"\U0001F4B8 {title}\n\n"
         f"Game Total: {amount}\n"
         f"Cashback: {cashback_amount}\n\n"
-        f"Aapko {cashback_amount} cashback milega."
+        f"Cashback aapka {cashback_amount} rupaye ho gaya hai."
     )
 
 
@@ -987,7 +987,7 @@ def build_game_quick_actions_markup() -> InlineKeyboardMarkup:
             [InlineKeyboardButton("Game OK ke liye dabaye", callback_data=QUICK_ACTION_GAME_OK)],
             [InlineKeyboardButton("DS OK ke liye dabaye", callback_data=QUICK_ACTION_DS_OK)],
             [InlineKeyboardButton("Cashback 95/5 ke liye dabaye", callback_data=QUICK_ACTION_CASHBACK_95_5)],
-            [InlineKeyboardButton("Cashback 10% ke liye dabaye", callback_data=QUICK_ACTION_CASHBACK_90_10)],
+            [InlineKeyboardButton("Cashback 90/10 ke liye dabaye", callback_data=QUICK_ACTION_CASHBACK_90_10)],
         ]
     )
 
