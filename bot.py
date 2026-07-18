@@ -66,8 +66,8 @@ GAME_OK_SUCCESS_TEXT = (
     "\u2726\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2726"
 )
 
-CASHBACK_95_5_PROMPT_TEXT = "Cashback 95/5 ke liye apni game ka total amount reply me likho. Example: 1000 ya total 1000"
-CASHBACK_90_10_PROMPT_TEXT = "Cashback 90/10 ke liye apni game ka total amount reply me likho. Example: 1000 ya total 1000"
+CASHBACK_95_5_PROMPT_TEXT = "Cashback 95/5 ke liye pehle apna pura kaam daalo, phir yahan reply me `total`, `1000`, ya `total 1000` likho."
+CASHBACK_90_10_PROMPT_TEXT = "Cashback 90/10 ke liye pehle apna pura kaam daalo, phir yahan reply me `total`, `1000`, ya `total 1000` likho."
 CASHBACK_95_5_SUCCESS_TEXT = "💸 Cashback 95/5 mode active hai.\nNormal 10×1000 rate nahi lagega."
 CASHBACK_90_10_SUCCESS_TEXT = "💸 Cashback 90/10 mode active hai.\nNormal 10×1000 rate nahi lagega."
 
@@ -1486,6 +1486,7 @@ async def prompt_cashback_amount(update: Update, context: ContextTypes.DEFAULT_T
         return
 
     message = get_update_message(update)
+    set_cashback_mode(message, mode)
     prompt_text = get_cashback_prompt_text(mode)
     await send_with_retry(
         context.bot.send_message,
@@ -1495,6 +1496,31 @@ async def prompt_cashback_amount(update: Update, context: ContextTypes.DEFAULT_T
         reply_markup=ForceReply(selective=False, input_field_placeholder="Example: total 1000"),
         **get_business_kwargs(update),
     )
+
+
+def resolve_cashback_amount_from_text_or_recent_games(message, text: str) -> int | None:
+    amount = parse_cashback_amount(text)
+    if amount is not None:
+        return amount
+
+    normalized_text = str(text or "").strip().lower()
+    if not normalized_text:
+        return None
+
+    if not re.search(r"\btotal\b|\bttl\b|\bt\b|\u091f\u094b\u091f\u0932", normalized_text):
+        return None
+
+    source_messages, _used_reply_message, _reply_message_id = collect_game_source_messages(message)
+    source_messages = [item.strip() for item in source_messages if item.strip()]
+    if not source_messages:
+        return None
+
+    combined_text = "\n".join(source_messages)
+    success, _reply_text_value, summary = build_game_total_reply(combined_text)
+    if not success or summary is None:
+        return None
+
+    return int(round(summary.total_amount))
 
 
 async def handle_cashback_reply(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1520,12 +1546,12 @@ async def handle_cashback_reply(update: Update, context: ContextTypes.DEFAULT_TY
     if not getattr(reply_from, "is_bot", False):
         return
 
-    amount = parse_cashback_amount(getattr(message, "text", "") or "")
+    amount = resolve_cashback_amount_from_text_or_recent_games(message, getattr(message, "text", "") or "")
     if amount is None:
         await reply_text(
             update,
             context,
-            "Cashback amount samajh nahi aaya. Sirf number bhejo, example: 1000 ya total 1000",
+            "Cashback amount samajh nahi aaya. `1000`, `total 1000`, ya sirf `total` reply karo.",
         )
         return
 
