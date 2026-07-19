@@ -31,6 +31,7 @@ BOT_TIMEZONE = ZoneInfo("Asia/Kolkata")
 QUIET_HOURS_START = time(4, 0)
 QUIET_HOURS_END = time(5, 20)
 BUTTON_SESSION_GAP = timedelta(minutes=30)
+APPROVAL_DUPLICATE_WINDOW = timedelta(seconds=45)
 GAME_BLOCK_WINDOWS = (
     ("Delhi Bazar", time(14, 45), time(15, 15)),
     ("Shree Ganesh", time(16, 20), time(16, 45)),
@@ -202,6 +203,7 @@ def load_approval_state() -> dict[str, dict[str, str | list[int]]]:
             continue
 
         last_signature = str(raw_value.get("last_signature", "") or "").strip()
+        last_signature_at = str(raw_value.get("last_signature_at", "") or "").strip()
         recent_reply_ids_raw = raw_value.get("recent_reply_ids", [])
         recent_reply_ids = []
         if isinstance(recent_reply_ids_raw, list):
@@ -212,6 +214,7 @@ def load_approval_state() -> dict[str, dict[str, str | list[int]]]:
 
         approval_state[chat_key] = {
             "last_signature": last_signature,
+            "last_signature_at": last_signature_at,
             "recent_reply_ids": recent_reply_ids[-100:],
         }
 
@@ -494,7 +497,15 @@ def is_duplicate_approval(message, source_messages: list[str], reply_message_id:
 
     signature = build_approval_signature(source_messages, reply_message_id)
     last_signature = str(chat_state.get("last_signature", "") or "").strip()
-    return bool(signature and signature == last_signature)
+    last_signature_at = parse_iso_datetime(str(chat_state.get("last_signature_at", "") or "").strip())
+    if not (signature and signature == last_signature):
+        return False
+
+    if last_signature_at is None:
+        return True
+
+    current_time = datetime.now(BOT_TIMEZONE)
+    return current_time - last_signature_at <= APPROVAL_DUPLICATE_WINDOW
 
 
 def mark_approval_sent(message, source_messages: list[str], reply_message_id: int | None = None) -> None:
@@ -516,6 +527,7 @@ def mark_approval_sent(message, source_messages: list[str], reply_message_id: in
 
     approval_state[chat_key] = {
         "last_signature": build_approval_signature(source_messages, reply_message_id),
+        "last_signature_at": datetime.now(BOT_TIMEZONE).isoformat(),
         "recent_reply_ids": normalized_reply_ids[-100:],
     }
     save_approval_state(approval_state)
