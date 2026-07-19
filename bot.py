@@ -2370,6 +2370,11 @@ async def relay_source_group_message(update: Update, context: ContextTypes.DEFAU
 
 async def remember_recent_game_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message = get_update_message(update)
+    from_user = getattr(message, "from_user", None)
+    if getattr(from_user, "is_bot", False):
+        logger.info("MEMORY_HANDLER skipped bot message chat_id=%s", getattr(message, "chat_id", None))
+        return
+
     text = str(getattr(message, "text", "") or "").strip()
     if not text:
         return
