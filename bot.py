@@ -105,9 +105,10 @@ CASHBACK_90_10_PROMPT_TEXT = (
     "╚════════════════════╝"
 )
 CASHBACK_WITHDRAW_PROMPT_TEXT = (
-    "Apne total game ka amount dalo.\n"
-    "Agar auto total chahiye to `cashback total` likho.\n"
-    "Agar manual amount dena hai to `1000` ya `cashback 1000` likho."
+    "Apni total game ka amount dalo.\n"
+    "Agar bot se auto total nikalwana hai to `cashback total` likho.\n"
+    "Agar khud amount dalna hai to sirf `1000` ya `cashback 1000` likho.\n"
+    "Dono tarah se cashback nikal jayega."
 )
 CASHBACK_95_5_SUCCESS_TEXT = "GAME OK \u2705\nCashback 95/5"
 CASHBACK_90_10_SUCCESS_TEXT = "GAME OK \u2705\nCashback 90/10"
@@ -1689,7 +1690,7 @@ async def handle_cashback_reply(update: Update, context: ContextTypes.DEFAULT_TY
         await reply_text(
             update,
             context,
-            "Cashback amount samajh nahi aaya. `cashback total`, `cashback 1000`, `total`, ya `1000` reply karo.",
+            "Cashback samajh nahi aaya. `cashback total`, `cashback 1000`, `total`, ya sirf `1000` likho.",
         )
         return
 
@@ -1718,6 +1719,36 @@ async def handle_cashback_trigger(update: Update, context: ContextTypes.DEFAULT_
         return
 
     await prompt_cashback_amount(update, context, mode)
+
+
+async def handle_cashback_amount_in_active_mode(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if is_quiet_hours():
+        return
+
+    message = get_update_message(update)
+    if getattr(message, "reply_to_message", None):
+        return
+
+    cashback_mode = get_cashback_mode(message)
+    if cashback_mode not in {"95_5", "90_10"}:
+        return
+
+    text = str(getattr(message, "text", "") or "").strip()
+    if not text or looks_like_game_message(text):
+        return
+
+    if parse_cashback_amount(text) is None and not re.search(r"\btotal\b|\bttl\b|\bt\b|\u091f\u094b\u091f\u0932", text.lower()):
+        return
+
+    amount = resolve_cashback_amount_from_text_or_recent_games(message, text)
+    if amount is None:
+        return
+
+    await reply_text(
+        update,
+        context,
+        build_cashback_reply(amount, get_cashback_percent(cashback_mode), get_cashback_title(cashback_mode)),
+    )
 
 
 def get_recent_payment_items(
@@ -2587,6 +2618,12 @@ def main() -> None:
         MessageHandler(
             filters.TEXT & filters.Regex(r"(?i)\b(?:cash\s*back|cashback|cashbak|casback|csback|cashbk|csba)\b|\u0915\u0948\u0936\u092c\u0948\u0915"),
             handle_cashback_trigger,
+        )
+    )
+    application.add_handler(
+        MessageHandler(
+            filters.TEXT & ~filters.COMMAND,
+            handle_cashback_amount_in_active_mode,
         )
     )
     application.add_handler(
