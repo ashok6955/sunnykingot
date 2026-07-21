@@ -26,6 +26,7 @@ GROUP_LOCK_STATE_FILE = BASE_DIR / "group_lock_state.json"
 BUTTON_SESSION_STATE_FILE = BASE_DIR / "button_session_state.json"
 APPROVAL_STATE_FILE = BASE_DIR / "approval_state.json"
 CASHBACK_MODE_FILE = BASE_DIR / "cashback_mode.json"
+CONTROL_PANEL_STATE_FILE = BASE_DIR / "control_panel_state.json"
 SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 BOT_TIMEZONE = ZoneInfo("Asia/Kolkata")
 QUIET_HOURS_START = time(4, 0)
@@ -49,9 +50,11 @@ QUICK_ACTION_DS_OK = "quick:ds_ok"
 QUICK_ACTION_CASHBACK_95_5 = "quick:cashback_95_5"
 QUICK_ACTION_CASHBACK_90_10 = "quick:cashback_90_10"
 QUICK_ACTION_EXIT_MODE = "quick:exit_mode"
+QUICK_ACTION_CASHBACK_WITHDRAW = "quick:cashback_withdraw"
 ALERT_CASHBACK_95_5_TEXT = "Cashback mode activate kar diya gaya hai.\nAb aap 95/5 mode me ho."
 ALERT_CASHBACK_90_10_TEXT = "Cashback mode activate kar diya gaya hai.\nAb aap 90/10 mode me ho."
 ALERT_EXIT_MAIN_MODE_TEXT = "Main mode activate kar diya gaya hai.\nAb jo button choose karoge, wahi mode chalega."
+ALERT_CASHBACK_WITHDRAW_TEXT = "Apne total game ka amount dalo.\nYa `cashback total` likhkar auto total nikaalo."
 HAPPY_HOURS_TEXT = (
     "\U0001F916 TELEGRAM HAPPY HOURS BETA\n"
     "\U0001F4B8 10\u00D71000 FULL RATE\n\n"
@@ -159,6 +162,34 @@ def load_button_session_state() -> dict[str, str]:
 
 def save_button_session_state(state: dict[str, str]) -> None:
     BUTTON_SESSION_STATE_FILE.write_text(
+        json.dumps(state, indent=2, sort_keys=True, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+
+def load_control_panel_state() -> dict[str, int]:
+    if not CONTROL_PANEL_STATE_FILE.exists():
+        return {}
+
+    try:
+        data = json.loads(CONTROL_PANEL_STATE_FILE.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        logger.warning("Could not read control panel state file. Starting with empty state.")
+        return {}
+
+    if not isinstance(data, dict):
+        return {}
+
+    normalized: dict[str, int] = {}
+    for key, value in data.items():
+        parsed_value = parse_chat_id(value)
+        if isinstance(key, str) and parsed_value is not None:
+            normalized[key] = int(parsed_value)
+    return normalized
+
+
+def save_control_panel_state(state: dict[str, int]) -> None:
+    CONTROL_PANEL_STATE_FILE.write_text(
         json.dumps(state, indent=2, sort_keys=True, ensure_ascii=False),
         encoding="utf-8",
     )
@@ -1038,43 +1069,65 @@ async def reply_photo(update: Update, context: ContextTypes.DEFAULT_TYPE, photo)
     )
 
 
-def build_game_quick_actions_markup() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        [
-            [InlineKeyboardButton("Chart dekhne ke liye dabaye", callback_data=QUICK_ACTION_CHART)],
-            [InlineKeyboardButton("QR lene ke liye dabaye", callback_data=QUICK_ACTION_QR)],
-            [InlineKeyboardButton("Game OK ke liye dabaye", callback_data=QUICK_ACTION_GAME_OK)],
-            [InlineKeyboardButton("DS OK ke liye dabaye", callback_data=QUICK_ACTION_DS_OK)],
-            [InlineKeyboardButton("Cashback 95/5 ke liye dabaye", callback_data=QUICK_ACTION_CASHBACK_95_5)],
-            [InlineKeyboardButton("Cashback 90/10 ke liye dabaye", callback_data=QUICK_ACTION_CASHBACK_90_10)],
-            [InlineKeyboardButton("Exit karke main mode me aaye", callback_data=QUICK_ACTION_EXIT_MODE)],
-        ]
-    )
+def build_control_panel_text(message) -> str:
+    mode = get_cashback_mode(message)
+    if mode == "95_5":
+        return "Control Panel\nMode Active: Cashback 95/5\nNeeche button dabaye:"
+    if mode == "90_10":
+        return "Control Panel\nMode Active: Cashback 90/10\nNeeche button dabaye:"
+    return "Control Panel\nMode Active: Main Mode\nNeeche button dabaye:"
 
 
-async def send_game_quick_actions(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    message = get_update_message(update)
-    if not getattr(message, "message_id", None):
-        return
+def build_game_quick_actions_markup(message) -> InlineKeyboardMarkup:
+    rows = [
+        [InlineKeyboardButton("Chart dekhne ke liye dabaye", callback_data=QUICK_ACTION_CHART)],
+        [InlineKeyboardButton("QR lene ke liye dabaye", callback_data=QUICK_ACTION_QR)],
+        [InlineKeyboardButton("Game OK ke liye dabaye", callback_data=QUICK_ACTION_GAME_OK)],
+        [InlineKeyboardButton("DS OK ke liye dabaye", callback_data=QUICK_ACTION_DS_OK)],
+    ]
 
-    message_time = getattr(message, "date", None)
-    if isinstance(message_time, datetime):
-        message_time = message_time.astimezone(BOT_TIMEZONE)
+    mode = get_cashback_mode(message)
+    if mode in {"95_5", "90_10"}:
+        rows.append([InlineKeyboardButton("Cashback Nikale", callback_data=QUICK_ACTION_CASHBACK_WITHDRAW)])
+        rows.append([InlineKeyboardButton("Exit karke main mode me aaye", callback_data=QUICK_ACTION_EXIT_MODE)])
     else:
-        message_time = datetime.now(BOT_TIMEZONE)
+        rows.append([InlineKeyboardButton("Cashback 95/5 ke liye dabaye", callback_data=QUICK_ACTION_CASHBACK_95_5)])
+        rows.append([InlineKeyboardButton("Cashback 90/10 ke liye dabaye", callback_data=QUICK_ACTION_CASHBACK_90_10)])
 
-    if not should_show_quick_actions(message, message_time):
-        return
+    return InlineKeyboardMarkup(rows)
 
-    await send_with_retry(
+
+async def ensure_control_panel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    message = get_update_message(update)
+    session_key = build_button_session_key(message)
+    state = load_control_panel_state()
+    existing_message_id = state.get(session_key)
+    panel_text = build_control_panel_text(message)
+    panel_markup = build_game_quick_actions_markup(message)
+
+    if existing_message_id is not None:
+        try:
+            await send_with_retry(
+                context.bot.edit_message_text,
+                chat_id=message.chat_id,
+                message_id=existing_message_id,
+                text=panel_text,
+                reply_markup=panel_markup,
+                **get_business_kwargs(update),
+            )
+            return
+        except Exception:
+            logger.exception("Could not edit control panel chat_id=%s message_id=%s", message.chat_id, existing_message_id)
+
+    sent_message = await send_with_retry(
         context.bot.send_message,
         chat_id=message.chat_id,
-        text="Neeche button dabaye:",
-        reply_to_message_id=message.message_id,
-        reply_markup=build_game_quick_actions_markup(),
+        text=panel_text,
+        reply_markup=panel_markup,
         **get_business_kwargs(update),
     )
-    mark_quick_actions_sent(message, message_time)
+    state[session_key] = sent_message.message_id
+    save_control_panel_state(state)
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1552,8 +1605,31 @@ async def prompt_cashback_amount(update: Update, context: ContextTypes.DEFAULT_T
         context.bot.send_message,
         chat_id=message.chat_id,
         text=prompt_text,
-        reply_to_message_id=getattr(message, "message_id", None),
         reply_markup=ForceReply(selective=False, input_field_placeholder="Example: cashback total / cashback 1000"),
+        **get_business_kwargs(update),
+    )
+
+
+async def prompt_cashback_withdraw(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if is_quiet_hours():
+        return
+
+    message = get_update_message(update)
+    mode = get_cashback_mode(message)
+    if mode not in {"95_5", "90_10"}:
+        await reply_text(update, context, "Pehle Cashback 95/5 ya Cashback 90/10 mode choose karo.")
+        return
+
+    prompt_text = (
+        "Apne total game ka amount dalo.\n"
+        "Agar auto total chahiye to `cashback total` likho.\n"
+        "Agar manual amount dena hai to `1000` ya `cashback 1000` likho."
+    )
+    await send_with_retry(
+        context.bot.send_message,
+        chat_id=message.chat_id,
+        text=prompt_text,
+        reply_markup=ForceReply(selective=False, input_field_placeholder="Example: cashback total / 1000"),
         **get_business_kwargs(update),
     )
 
@@ -2279,11 +2355,13 @@ async def handle_quick_action_callback(update: Update, context: ContextTypes.DEF
     if action == QUICK_ACTION_CASHBACK_95_5:
         await query.answer(text=ALERT_CASHBACK_95_5_TEXT, show_alert=True)
         await prompt_cashback_amount(update, context, "95_5")
+        await ensure_control_panel(update, context)
         return
 
     if action == QUICK_ACTION_CASHBACK_90_10:
         await query.answer(text=ALERT_CASHBACK_90_10_TEXT, show_alert=True)
         await prompt_cashback_amount(update, context, "90_10")
+        await ensure_control_panel(update, context)
         return
 
     if action == QUICK_ACTION_EXIT_MODE:
@@ -2291,6 +2369,12 @@ async def handle_quick_action_callback(update: Update, context: ContextTypes.DEF
         message = get_update_message(update)
         clear_cashback_mode(message)
         await reply_text(update, context, "Aap ab main mode me aa gaye ho. Ab jo button ya mode choose karoge, wahi system chalega.")
+        await ensure_control_panel(update, context)
+        return
+
+    if action == QUICK_ACTION_CASHBACK_WITHDRAW:
+        await query.answer(text=ALERT_CASHBACK_WITHDRAW_TEXT, show_alert=True)
+        await prompt_cashback_withdraw(update, context)
         return
 
     await query.answer()
@@ -2434,7 +2518,7 @@ async def remember_recent_game_message(update: Update, context: ContextTypes.DEF
     else:
         logger.info("MEMORY_HANDLER non-game text chat_id=%s", getattr(message, "chat_id", None))
 
-    await send_game_quick_actions(update, context)
+    await ensure_control_panel(update, context)
 
 
 def main() -> None:
