@@ -533,6 +533,16 @@ def mark_approval_sent(message, source_messages: list[str], reply_message_id: in
     save_approval_state(approval_state)
 
 
+def clear_approval_state_for_chat(message) -> None:
+    chat_key = build_button_session_key(message)
+    approval_state = load_approval_state()
+    if chat_key not in approval_state:
+        return
+
+    del approval_state[chat_key]
+    save_approval_state(approval_state)
+
+
 def clear_processed_game_memory(chat_id: int, source_messages: list[str], used_reply_message: bool) -> None:
     memory = load_chat_memory()
     chat_key = str(chat_id)
@@ -2407,6 +2417,7 @@ async def remember_recent_game_message(update: Update, context: ContextTypes.DEF
         existing_messages.append(text)
         memory[chat_key] = existing_messages[-10:]
         save_chat_memory(memory)
+        clear_approval_state_for_chat(message)
         logger.info("MEMORY_HANDLER saved game chat_id=%s count=%s", getattr(message, "chat_id", None), len(memory[chat_key]))
     else:
         logger.info("MEMORY_HANDLER non-game text chat_id=%s", getattr(message, "chat_id", None))
