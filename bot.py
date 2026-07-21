@@ -104,6 +104,11 @@ CASHBACK_90_10_PROMPT_TEXT = (
     "  Cashback subah diya jayega.\n"
     "╚════════════════════╝"
 )
+CASHBACK_WITHDRAW_PROMPT_TEXT = (
+    "Apne total game ka amount dalo.\n"
+    "Agar auto total chahiye to `cashback total` likho.\n"
+    "Agar manual amount dena hai to `1000` ya `cashback 1000` likho."
+)
 CASHBACK_95_5_SUCCESS_TEXT = "GAME OK \u2705\nCashback 95/5"
 CASHBACK_90_10_SUCCESS_TEXT = "GAME OK \u2705\nCashback 90/10"
 
@@ -1620,15 +1625,10 @@ async def prompt_cashback_withdraw(update: Update, context: ContextTypes.DEFAULT
         await reply_text(update, context, "Pehle Cashback 95/5 ya Cashback 90/10 mode choose karo.")
         return
 
-    prompt_text = (
-        "Apne total game ka amount dalo.\n"
-        "Agar auto total chahiye to `cashback total` likho.\n"
-        "Agar manual amount dena hai to `1000` ya `cashback 1000` likho."
-    )
     await send_with_retry(
         context.bot.send_message,
         chat_id=message.chat_id,
-        text=prompt_text,
+        text=CASHBACK_WITHDRAW_PROMPT_TEXT,
         reply_markup=ForceReply(selective=False, input_field_placeholder="Example: cashback total / 1000"),
         **get_business_kwargs(update),
     )
@@ -1674,8 +1674,10 @@ async def handle_cashback_reply(update: Update, context: ContextTypes.DEFAULT_TY
         cashback_mode = "95_5"
     elif reply_text_value == CASHBACK_90_10_PROMPT_TEXT:
         cashback_mode = "90_10"
+    elif reply_text_value == CASHBACK_WITHDRAW_PROMPT_TEXT:
+        cashback_mode = get_cashback_mode(message)
 
-    if cashback_mode is None:
+    if cashback_mode not in {"95_5", "90_10"}:
         return
 
     reply_from = getattr(reply_to_message, "from_user", None)
@@ -2518,7 +2520,7 @@ async def remember_recent_game_message(update: Update, context: ContextTypes.DEF
     else:
         logger.info("MEMORY_HANDLER non-game text chat_id=%s", getattr(message, "chat_id", None))
 
-    await ensure_control_panel(update, context)
+    return
 
 
 def main() -> None:
