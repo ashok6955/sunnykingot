@@ -2630,12 +2630,6 @@ def main() -> None:
     )
     application.add_handler(
         MessageHandler(
-            filters.TEXT & ~filters.COMMAND,
-            handle_cashback_amount_in_active_mode,
-        )
-    )
-    application.add_handler(
-        MessageHandler(
             filters.TEXT
             & filters.Regex(
                 r"(?i)(qr|\u0915\u094d\u092f\u0942\u0906\u0930|scanner|scan|barcode|bar\s*code)"
@@ -2670,12 +2664,6 @@ def main() -> None:
     )
     application.add_handler(
         MessageHandler(
-            filters.TEXT & ~filters.COMMAND,
-            handle_game_ok_text,
-        )
-    )
-    application.add_handler(
-        MessageHandler(
             filters.TEXT & filters.Regex(r"(?i)^(?=.*(?:\bgame\b|\u0917\u0947\u092e))(?=.*(?:\bok\b|\boke\b|\bokay\b|\u0913\u0915\u0947))(?=.*(?:\bplus\b|\u092a\u094d\u0932\u0938)).*$"),
             send_game_ok_plus,
         )
@@ -2690,6 +2678,18 @@ def main() -> None:
         MessageHandler(
             filters.TEXT & filters.Regex(r"(?i)^\s*ds\s+ok\s*$"),
             send_ds_ok_banner,
+        )
+    )
+    application.add_handler(
+        MessageHandler(
+            filters.TEXT & ~filters.COMMAND,
+            handle_cashback_amount_in_active_mode,
+        )
+    )
+    application.add_handler(
+        MessageHandler(
+            filters.TEXT & ~filters.COMMAND,
+            handle_game_ok_text,
         )
     )
     application.add_handler(
