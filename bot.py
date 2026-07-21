@@ -1717,7 +1717,7 @@ async def handle_cashback_trigger(update: Update, context: ContextTypes.DEFAULT_
 
     message = get_update_message(update)
     message_text = getattr(message, "text", "") or ""
-    mode = detect_cashback_mode(message_text) or "95_5"
+    mode = detect_cashback_mode(message_text) or get_cashback_mode(message) or "95_5"
     amount = resolve_cashback_amount_from_text_or_recent_games(message, message_text)
     if amount is not None:
         set_cashback_mode(message, mode)
