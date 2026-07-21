@@ -2524,6 +2524,14 @@ async def remember_recent_game_message(update: Update, context: ContextTypes.DEF
         text[:200],
     )
 
+    if should_show_quick_actions(message):
+        try:
+            await ensure_control_panel(update, context)
+            mark_quick_actions_sent(message)
+            logger.info("MEMORY_HANDLER refreshed control panel chat_id=%s", getattr(message, "chat_id", None))
+        except Exception:
+            logger.exception("MEMORY_HANDLER could not refresh control panel chat_id=%s", getattr(message, "chat_id", None))
+
     is_game_text = looks_like_game_message(text)
 
     if get_blocked_game_market_name() and is_game_text:
