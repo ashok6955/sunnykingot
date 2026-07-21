@@ -201,6 +201,16 @@ def save_control_panel_state(state: dict[str, int]) -> None:
     )
 
 
+def clear_control_panel_for_message(message) -> None:
+    session_key = build_button_session_key(message)
+    state = load_control_panel_state()
+    if session_key not in state:
+        return
+
+    del state[session_key]
+    save_control_panel_state(state)
+
+
 def load_cashback_mode_state() -> dict[str, str]:
     if not CASHBACK_MODE_FILE.exists():
         return {}
@@ -2526,6 +2536,7 @@ async def remember_recent_game_message(update: Update, context: ContextTypes.DEF
 
     if should_show_quick_actions(message):
         try:
+            clear_control_panel_for_message(message)
             await ensure_control_panel(update, context)
             mark_quick_actions_sent(message)
             logger.info("MEMORY_HANDLER refreshed control panel chat_id=%s", getattr(message, "chat_id", None))
