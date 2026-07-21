@@ -49,6 +49,9 @@ QUICK_ACTION_DS_OK = "quick:ds_ok"
 QUICK_ACTION_CASHBACK_95_5 = "quick:cashback_95_5"
 QUICK_ACTION_CASHBACK_90_10 = "quick:cashback_90_10"
 QUICK_ACTION_EXIT_MODE = "quick:exit_mode"
+ALERT_CASHBACK_95_5_TEXT = "Cashback mode activate kar diya gaya hai.\nAb aap 95/5 mode me ho."
+ALERT_CASHBACK_90_10_TEXT = "Cashback mode activate kar diya gaya hai.\nAb aap 90/10 mode me ho."
+ALERT_EXIT_MAIN_MODE_TEXT = "Main mode activate kar diya gaya hai.\nAb jo button choose karoge, wahi mode chalega."
 HAPPY_HOURS_TEXT = (
     "\U0001F916 TELEGRAM HAPPY HOURS BETA\n"
     "\U0001F4B8 10\u00D71000 FULL RATE\n\n"
@@ -2251,37 +2254,46 @@ async def handle_quick_action_callback(update: Update, context: ContextTypes.DEF
     if query is None:
         return
 
-    await query.answer()
     action = str(getattr(query, "data", "") or "").strip()
 
     if action == QUICK_ACTION_CHART:
+        await query.answer()
         await send_chart_image(update, context)
         return
 
     if action == QUICK_ACTION_QR:
+        await query.answer()
         await send_next_qr(update, context)
         return
 
     if action == QUICK_ACTION_GAME_OK:
+        await query.answer()
         await send_game_ok_from_button(update, context)
         return
 
     if action == QUICK_ACTION_DS_OK:
+        await query.answer()
         await send_ds_ok_from_button(update, context)
         return
 
     if action == QUICK_ACTION_CASHBACK_95_5:
+        await query.answer(text=ALERT_CASHBACK_95_5_TEXT, show_alert=True)
         await prompt_cashback_amount(update, context, "95_5")
         return
 
     if action == QUICK_ACTION_CASHBACK_90_10:
+        await query.answer(text=ALERT_CASHBACK_90_10_TEXT, show_alert=True)
         await prompt_cashback_amount(update, context, "90_10")
         return
 
     if action == QUICK_ACTION_EXIT_MODE:
+        await query.answer(text=ALERT_EXIT_MAIN_MODE_TEXT, show_alert=True)
         message = get_update_message(update)
         clear_cashback_mode(message)
         await reply_text(update, context, "Aap ab main mode me aa gaye ho. Ab jo button ya mode choose karoge, wahi system chalega.")
+        return
+
+    await query.answer()
 
 
 async def relay_source_group_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
