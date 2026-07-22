@@ -45,6 +45,7 @@ GAME_OK_TRIGGER_TEXT = "\U0001F3AE GAME OK \u2714\ufe0f\u2714\ufe0f"
 HAPPY_HOURS_PATTERN = r"(?i)\bhappy\s*hour[s]?\b|\bhappy\s*hor[s]?\b|\bhappy\s*hourse\b"
 QUICK_ACTION_CHART = "quick:chart"
 QUICK_ACTION_QR = "quick:qr"
+QUICK_ACTION_TOTAL = "quick:total"
 QUICK_ACTION_GAME_OK = "quick:game_ok"
 QUICK_ACTION_DS_OK = "quick:ds_ok"
 QUICK_ACTION_CASHBACK_95_5 = "quick:cashback_95_5"
@@ -1098,6 +1099,7 @@ def build_game_quick_actions_markup(message) -> InlineKeyboardMarkup:
     rows = [
         [InlineKeyboardButton("Chart dekhne ke liye dabaye", callback_data=QUICK_ACTION_CHART)],
         [InlineKeyboardButton("QR lene ke liye dabaye", callback_data=QUICK_ACTION_QR)],
+        [InlineKeyboardButton("Total karne ke liye dabaye", callback_data=QUICK_ACTION_TOTAL)],
         [InlineKeyboardButton("Game OK ke liye dabaye", callback_data=QUICK_ACTION_GAME_OK)],
         [InlineKeyboardButton("DS OK ke liye dabaye", callback_data=QUICK_ACTION_DS_OK)],
     ]
@@ -2385,6 +2387,11 @@ async def handle_quick_action_callback(update: Update, context: ContextTypes.DEF
         await send_next_qr(update, context)
         return
 
+    if action == QUICK_ACTION_TOTAL:
+        await query.answer()
+        await send_game_total(update, context)
+        return
+
     if action == QUICK_ACTION_GAME_OK:
         await query.answer()
         await send_game_ok_from_button(update, context)
@@ -2614,6 +2621,12 @@ def main() -> None:
     application.add_handler(CommandHandler("total", send_game_total))
     application.add_handler(
         MessageHandler(
+            filters.TEXT & filters.Regex(r"(?i)^\s*total\s*$"),
+            send_game_total,
+        )
+    )
+    application.add_handler(
+        MessageHandler(
             filters.REPLY & filters.TEXT & ~filters.COMMAND,
             handle_cashback_reply,
         )
@@ -2654,12 +2667,6 @@ def main() -> None:
             reject_game_during_block_window,
         ),
         group=1,
-    )
-    application.add_handler(
-        MessageHandler(
-            filters.TEXT & filters.Regex(r"(?i)^\s*total\s*$"),
-            send_game_total,
-        )
     )
     application.add_handler(
         MessageHandler(
