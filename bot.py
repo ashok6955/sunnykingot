@@ -48,6 +48,8 @@ QUICK_ACTION_QR = "quick:qr"
 QUICK_ACTION_TOTAL = "quick:total"
 QUICK_ACTION_GAME_OK = "quick:game_ok"
 QUICK_ACTION_DS_OK = "quick:ds_ok"
+QUICK_ACTION_ADVANCE = "quick:advance"
+QUICK_ACTION_MAIN_BUTTONS = "quick:main_buttons"
 QUICK_ACTION_CASHBACK_95_5 = "quick:cashback_95_5"
 QUICK_ACTION_CASHBACK_90_10 = "quick:cashback_90_10"
 QUICK_ACTION_EXIT_MODE = "quick:exit_mode"
@@ -1089,19 +1091,25 @@ async def reply_photo(update: Update, context: ContextTypes.DEFAULT_TYPE, photo)
 def build_control_panel_text(message) -> str:
     mode = get_cashback_mode(message)
     if mode == "95_5":
-        return "Control Panel\nMode Active: Cashback 95/5\nNeeche button dabaye:"
+        return "Control Panel\nMode Active: Cashback 95/5\nMain button dabaye:"
     if mode == "90_10":
-        return "Control Panel\nMode Active: Cashback 90/10\nNeeche button dabaye:"
-    return "Control Panel\nMode Active: Main Mode\nNeeche button dabaye:"
+        return "Control Panel\nMode Active: Cashback 90/10\nMain button dabaye:"
+    return "Control Panel\nMode Active: Main Mode\nMain button dabaye:"
 
 
 def build_game_quick_actions_markup(message) -> InlineKeyboardMarkup:
-    rows = [
+    return InlineKeyboardMarkup([
         [InlineKeyboardButton("Chart dekhne ke liye dabaye", callback_data=QUICK_ACTION_CHART)],
         [InlineKeyboardButton("QR lene ke liye dabaye", callback_data=QUICK_ACTION_QR)],
-        [InlineKeyboardButton("Total karne ke liye dabaye", callback_data=QUICK_ACTION_TOTAL)],
         [InlineKeyboardButton("Game OK ke liye dabaye", callback_data=QUICK_ACTION_GAME_OK)],
         [InlineKeyboardButton("DS OK ke liye dabaye", callback_data=QUICK_ACTION_DS_OK)],
+        [InlineKeyboardButton("Advance", callback_data=QUICK_ACTION_ADVANCE)],
+    ])
+
+
+def build_advanced_quick_actions_markup(message) -> InlineKeyboardMarkup:
+    rows = [
+        [InlineKeyboardButton("Total karne ke liye dabaye", callback_data=QUICK_ACTION_TOTAL)],
     ]
 
     mode = get_cashback_mode(message)
@@ -1112,6 +1120,7 @@ def build_game_quick_actions_markup(message) -> InlineKeyboardMarkup:
         rows.append([InlineKeyboardButton("Cashback 95/5 ke liye dabaye", callback_data=QUICK_ACTION_CASHBACK_95_5)])
         rows.append([InlineKeyboardButton("Cashback 90/10 ke liye dabaye", callback_data=QUICK_ACTION_CASHBACK_90_10)])
 
+    rows.append([InlineKeyboardButton("Main Buttons", callback_data=QUICK_ACTION_MAIN_BUTTONS)])
     return InlineKeyboardMarkup(rows)
 
 
@@ -2400,6 +2409,24 @@ async def handle_quick_action_callback(update: Update, context: ContextTypes.DEF
     if action == QUICK_ACTION_DS_OK:
         await query.answer()
         await send_ds_ok_from_button(update, context)
+        return
+
+    if action == QUICK_ACTION_ADVANCE:
+        message = get_update_message(update)
+        await query.answer()
+        await query.edit_message_text(
+            text="Control Panel\nAdvance buttons khul gaye hain:",
+            reply_markup=build_advanced_quick_actions_markup(message),
+        )
+        return
+
+    if action == QUICK_ACTION_MAIN_BUTTONS:
+        message = get_update_message(update)
+        await query.answer()
+        await query.edit_message_text(
+            text=build_control_panel_text(message),
+            reply_markup=build_game_quick_actions_markup(message),
+        )
         return
 
     if action == QUICK_ACTION_CASHBACK_95_5:
