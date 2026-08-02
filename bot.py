@@ -33,13 +33,13 @@ QUIET_HOURS_START = time(4, 0)
 QUIET_HOURS_END = time(5, 20)
 BUTTON_SESSION_GAP = timedelta(minutes=30)
 APPROVAL_DUPLICATE_WINDOW = timedelta(seconds=45)
-GAME_BLOCK_WINDOWS = (
-    ("Delhi Bazar", time(14, 45), time(15, 15)),
-    ("Shree Ganesh", time(16, 20), time(16, 45)),
-    ("Faridabad", time(17, 45), time(18, 20)),
-    ("Ghaziabad", time(21, 20), time(22, 0)),
-    ("Gali", time(23, 20), time(23, 59, 59)),
-    ("Gali", time(0, 0), time(0, 5)),
+APPROVAL_BLOCK_WINDOWS = (
+    (time(15, 5), time(15, 15)),
+    (time(16, 40), time(16, 50)),
+    (time(18, 10), time(18, 20)),
+    (time(21, 55), time(22, 10)),
+    (time(23, 55), time(23, 59, 59)),
+    (time(0, 0), time(0, 10)),
 )
 GAME_OK_TRIGGER_TEXT = "\U0001F3AE GAME OK \u2714\ufe0f\u2714\ufe0f"
 HAPPY_HOURS_PATTERN = r"(?i)\bhappy\s*hour[s]?\b|\bhappy\s*hor[s]?\b|\bhappy\s*hourse\b"
@@ -797,28 +797,12 @@ def is_quiet_hours() -> bool:
     return QUIET_HOURS_START <= current_time < QUIET_HOURS_END
 
 
-def get_blocked_game_market_name() -> str | None:
+def is_game_approval_blocked() -> bool:
     current_time = datetime.now(BOT_TIMEZONE).time()
-    for market_name, start, end in GAME_BLOCK_WINDOWS:
+    for start, end in APPROVAL_BLOCK_WINDOWS:
         if start <= current_time <= end:
-            return market_name
-    return None
-
-
-async def reject_game_during_block_window(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if is_quiet_hours():
-        return
-
-    message = get_update_message(update)
-    text = str(getattr(message, "text", "") or "").strip()
-    if not text or not looks_like_game_message(text):
-        return
-
-    blocked_market_name = get_blocked_game_market_name()
-    if not blocked_market_name:
-        return
-
-    await reply_text(update, context, f"{blocked_market_name} TIME OVER")
+            return True
+    return False
 
 
 async def send_with_retry(send_callable, *args, retries: int = 2, retry_delay: float = 1.0, **kwargs):
@@ -997,8 +981,6 @@ def get_cashback_success_text_for_message(message) -> str | None:
 
 def should_relay_group_message(message) -> bool:
     text = str(getattr(message, "text", "") or "").strip()
-    if get_blocked_game_market_name():
-        return False
     return bool(text and looks_like_game_message(text))
 
 
@@ -2016,6 +1998,9 @@ async def process_game_approval(
     require_payment_verification: bool = False,
     clear_cashback_mode_on_success: bool = False,
 ) -> None:
+    if is_game_approval_blocked():
+        return
+
     message = get_update_message(update)
     source_messages, used_reply_message, reply_message_id = collect_game_source_messages(message)
     source_messages = [text for text in source_messages if text.strip()]
@@ -2056,7 +2041,7 @@ async def process_game_approval(
 
 
 async def send_game_ok(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if is_quiet_hours():
+    if is_quiet_hours() or is_game_approval_blocked():
         return
 
     message = get_update_message(update)
@@ -2108,7 +2093,7 @@ async def send_game_ok(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 
 async def send_game_ok_verified(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if is_quiet_hours():
+    if is_quiet_hours() or is_game_approval_blocked():
         return
 
     message = get_update_message(update)
@@ -2151,7 +2136,7 @@ async def send_game_ok_verified(update: Update, context: ContextTypes.DEFAULT_TY
 
 
 async def send_game_ok_plus(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if is_quiet_hours():
+    if is_quiet_hours() or is_game_approval_blocked():
         return
 
     message = get_update_message(update)
@@ -2200,7 +2185,7 @@ async def send_game_ok_plus(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 
 async def send_game_ok_from_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if is_quiet_hours():
+    if is_quiet_hours() or is_game_approval_blocked():
         return
 
     message = get_update_message(update)
@@ -2250,7 +2235,7 @@ async def handle_game_ok_text(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
 
 async def send_game_ok_manual_banner(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if is_quiet_hours():
+    if is_quiet_hours() or is_game_approval_blocked():
         return
 
     message = get_update_message(update)
@@ -2277,7 +2262,7 @@ async def send_game_ok_manual_banner(update: Update, context: ContextTypes.DEFAU
     )
 
 async def send_ds_ok_from_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if is_quiet_hours():
+    if is_quiet_hours() or is_game_approval_blocked():
         return
 
     message = get_update_message(update)
@@ -2335,7 +2320,7 @@ async def send_ds_ok_from_button(update: Update, context: ContextTypes.DEFAULT_T
 
 
 async def send_ds_ok_banner(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if is_quiet_hours():
+    if is_quiet_hours() or is_game_approval_blocked():
         return
 
     message = get_update_message(update)
@@ -2366,7 +2351,7 @@ async def send_ds_ok_banner(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 
 async def send_ds_ok(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if is_quiet_hours():
+    if is_quiet_hours() or is_game_approval_blocked():
         return
 
     target_group_id = get_target_group_id()
@@ -2614,10 +2599,6 @@ async def remember_recent_game_message(update: Update, context: ContextTypes.DEF
 
     is_game_text = looks_like_game_message(text)
 
-    if get_blocked_game_market_name() and is_game_text:
-        logger.info("MEMORY_HANDLER blocked by market time chat_id=%s", getattr(message, "chat_id", None))
-        return
-
     if (
         re.fullmatch(r"(?i)\s*(/total|total|ds\s+ok)\s*", text)
         or is_game_ok_trigger_text(text)
@@ -2722,13 +2703,6 @@ def main() -> None:
             ),
             send_next_qr,
         )
-    )
-    application.add_handler(
-        MessageHandler(
-            filters.TEXT & ~filters.COMMAND,
-            reject_game_during_block_window,
-        ),
-        group=1,
     )
     application.add_handler(
         MessageHandler(
