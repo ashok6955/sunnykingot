@@ -2606,6 +2606,17 @@ async def remember_recent_game_message(update: Update, context: ContextTypes.DEF
         text[:200],
     )
 
+    if (
+        re.fullmatch(r"(?i)\s*(/total|total|ds\s+ok)\s*", text)
+        or is_ds_ok_trigger_text(text)
+        or is_game_ok_trigger_text(text)
+        or is_game_ok_plus_trigger_text(text)
+        or is_cashback_trigger_text(text)
+        or re.fullmatch(r"(?i)\s*(?:qr|scanner|scan|barcode|bar\s*code|chart|time|timing)\s*", text)
+    ):
+        logger.info("MEMORY_HANDLER skipped trigger text chat_id=%s", getattr(message, "chat_id", None))
+        return
+
     if should_show_quick_actions(message):
         try:
             clear_control_panel_for_message(message)
@@ -2616,15 +2627,6 @@ async def remember_recent_game_message(update: Update, context: ContextTypes.DEF
             logger.exception("MEMORY_HANDLER could not refresh control panel chat_id=%s", getattr(message, "chat_id", None))
 
     is_game_text = looks_like_game_message(text)
-
-    if (
-        re.fullmatch(r"(?i)\s*(/total|total|ds\s+ok)\s*", text)
-        or is_game_ok_trigger_text(text)
-        or is_game_ok_plus_trigger_text(text)
-        or is_cashback_trigger_text(text)
-    ):
-        logger.info("MEMORY_HANDLER skipped trigger text chat_id=%s", getattr(message, "chat_id", None))
-        return
 
     if is_game_text:
         memory = load_chat_memory()
