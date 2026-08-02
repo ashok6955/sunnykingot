@@ -1181,6 +1181,10 @@ async def ensure_control_panel(update: Update, context: ContextTypes.DEFAULT_TYP
         except Exception:
             logger.exception("Could not edit control panel chat_id=%s message_id=%s", message.chat_id, existing_message_id)
 
+    if not should_show_quick_actions(message):
+        logger.info("CONTROL_PANEL throttled for chat_id=%s", getattr(message, "chat_id", None))
+        return
+
     sent_message = await send_with_retry(
         context.bot.send_message,
         chat_id=message.chat_id,
@@ -1190,6 +1194,7 @@ async def ensure_control_panel(update: Update, context: ContextTypes.DEFAULT_TYP
     )
     state[session_key] = sent_message.message_id
     save_control_panel_state(state)
+    mark_quick_actions_sent(message)
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -2621,7 +2626,6 @@ async def remember_recent_game_message(update: Update, context: ContextTypes.DEF
         try:
             clear_control_panel_for_message(message)
             await ensure_control_panel(update, context)
-            mark_quick_actions_sent(message)
             logger.info("MEMORY_HANDLER refreshed control panel chat_id=%s", getattr(message, "chat_id", None))
         except Exception:
             logger.exception("MEMORY_HANDLER could not refresh control panel chat_id=%s", getattr(message, "chat_id", None))
