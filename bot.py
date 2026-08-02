@@ -537,6 +537,19 @@ def get_game_target_group_id() -> int | None:
     return parse_chat_id(os.getenv("GAME_TARGET_GROUP_ID"))
 
 
+def is_configured_target_group(chat_id: int | str | None) -> bool:
+    current_chat_id = parse_chat_id(chat_id)
+    if current_chat_id is None:
+        return False
+
+    target_group_ids = {
+        target_group_id
+        for target_group_id in (get_target_group_id(), get_game_target_group_id())
+        if target_group_id is not None
+    }
+    return current_chat_id in target_group_ids
+
+
 def get_source_group_id() -> int | None:
     settings = load_settings()
     if "source_group_id" in settings:
@@ -1144,6 +1157,10 @@ def build_advanced_quick_actions_markup(message) -> InlineKeyboardMarkup:
 
 async def ensure_control_panel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message = get_update_message(update)
+    if is_configured_target_group(getattr(message, "chat_id", None)):
+        logger.info("CONTROL_PANEL skipped configured target group chat_id=%s", getattr(message, "chat_id", None))
+        return
+
     session_key = build_button_session_key(message)
     state = load_control_panel_state()
     existing_message_id = state.get(session_key)
@@ -2671,12 +2688,6 @@ def main() -> None:
     )
     application.add_handler(
         MessageHandler(
-            filters.REPLY & filters.TEXT & ~filters.COMMAND,
-            handle_cashback_reply,
-        )
-    )
-    application.add_handler(
-        MessageHandler(
             filters.TEXT
             & filters.Regex(
                 r"(?i)(?:\bchart\b|\btime\b|\btiming\b|\u091a\u093e\u0930\u094d\u091f|\u091f\u093e\u0907\u092e|\u091f\u093e\u0907\u092e\u093f\u0902\u0917)"
@@ -2688,12 +2699,6 @@ def main() -> None:
         MessageHandler(
             filters.TEXT & filters.Regex(HAPPY_HOURS_PATTERN),
             send_happy_hours,
-        )
-    )
-    application.add_handler(
-        MessageHandler(
-            filters.TEXT & filters.Regex(r"(?i)\b(?:cash\s*back|cashback|cashbak|casback|csback|cashbk|csba)\b|\u0915\u0948\u0936\u092c\u0948\u0915"),
-            handle_cashback_trigger,
         )
     )
     application.add_handler(
@@ -2733,6 +2738,18 @@ def main() -> None:
         MessageHandler(
             filters.TEXT & filters.Regex(r"(?i)^\s*ds\s+ok\s*$"),
             send_ds_ok_banner,
+        )
+    )
+    application.add_handler(
+        MessageHandler(
+            filters.REPLY & filters.TEXT & ~filters.COMMAND,
+            handle_cashback_reply,
+        )
+    )
+    application.add_handler(
+        MessageHandler(
+            filters.TEXT & filters.Regex(r"(?i)\b(?:cash\s*back|cashback|cashbak|casback|csback|cashbk|csba)\b|\u0915\u0948\u0936\u092c\u0948\u0915"),
+            handle_cashback_trigger,
         )
     )
     application.add_handler(
