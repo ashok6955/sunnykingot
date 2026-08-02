@@ -75,6 +75,45 @@ GAME_OK_SUCCESS_TEXT = (
     "Bot Beta 3"
 )
 
+WELCOME_CONTROL_PANEL_TEXT = (
+    "👑 SUNNY KING OF KHAIWAL 👑\n\n"
+    "🎉 WELCOME TO OUR OFFICIAL TELEGRAM GROUP 🎉\n\n"
+    "🙏 सभी भाइयों और बहनों का हार्दिक स्वागत है।\n"
+    "⚠️ कृपया नीचे दिए गए सभी नियम ध्यान से पढ़ें और उनका पालन करें।\n\n"
+    "━━━━━━━━━━━━━━━━━━━━\n\n"
+    "📌 RULE 1\n"
+    "❌ Message Delete for Everyone या Message Edit करने पर आपका 💰 Balance तुरंत ₹0 (Zero) कर दिया जाएगा।\n\n"
+    "📌 RULE 2\n"
+    "💸 ₹100 से कम की Payment/Transaction मान्य नहीं होगी।\n"
+    "🎯 ऐसी Payment पर भेजी गई Game भी Invalid मानी जाएगी।\n\n"
+    "📌 RULE 3\n"
+    "✅ कम से कम ₹100 की ही Payment करें।\n"
+    "🚫 ₹100 से कम की Payment स्वीकार नहीं की जाएगी।\n\n"
+    "📌 RULE 4\n"
+    "🎯 कम से कम ₹100 की Game ही मान्य होगी।\n"
+    "❌ ₹100 से कम की Game स्वीकार नहीं की जाएगी।\n\n"
+    "📌 RULE 5\n"
+    "⚠️ ₹100 से कम की Payment न तो Valid होगी और न ही उसका Refund दिया जाएगा।\n"
+    "💡 Payment भेजने से पहले राशि अच्छी तरह जांच लें।\n\n"
+    "📌 RULE 6\n"
+    "📋 अपनी Game को Board से OK करवाना जरूरी है।\n"
+    "❌ अगर Board से OK नहीं हुआ, तो Game मान्य (Valid) नहीं मानी जाएगी।\n\n"
+    "📌 RULE 7\n"
+    "⏰ Time निकलने के बाद केवल OK का ही हिसाब-किताब होगा।\n\n"
+    "━━━━━━━━━━━━━━━━━━━━\n\n"
+    "⏰ GAME TIMINGS\n\n"
+    "🏆 DELHI BAZAR (DB) ➜ 🕒 03:05 PM\n"
+    "🏆 SHREE GANESH (SG) ➜ 🕓 04:40 PM\n"
+    "🏆 FARIDABAD (FD) ➜ 🕕 06:10 PM\n"
+    "🏆 GHAZIABAD (GB) ➜ 🕙 09:55 PM\n"
+    "🏆 GALI ➜ 🕛 11:55 PM\n"
+    "🏆 DISAWAR ➜ 🕓 04:00 AM\n\n"
+    "━━━━━━━━━━━━━━━━━━━━\n\n"
+    "📞 CONTACT: 9654080647\n\n"
+    "⚠️ Admin का जो भी फैसला होगा, वही सभी को मान्य होगा।\n\n"
+    "👑 Powered By SUNNY KING OF KHAIWAL"
+)
+
 CASHBACK_95_5_PROMPT_TEXT = (
     "╔════════════════════╗\n"
     "     💐 WELCOME 💐\n"
@@ -1089,12 +1128,8 @@ async def reply_photo(update: Update, context: ContextTypes.DEFAULT_TYPE, photo)
 
 
 def build_control_panel_text(message) -> str:
-    mode = get_cashback_mode(message)
-    if mode == "95_5":
-        return "Control Panel\nMode Active: Cashback 95/5\nMain button dabaye:"
-    if mode == "90_10":
-        return "Control Panel\nMode Active: Cashback 90/10\nMain button dabaye:"
-    return "Control Panel\nMode Active: Main Mode\nMain button dabaye:"
+    del message
+    return WELCOME_CONTROL_PANEL_TEXT
 
 
 def build_game_quick_actions_markup(message) -> InlineKeyboardMarkup:
