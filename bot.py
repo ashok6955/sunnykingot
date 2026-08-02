@@ -96,10 +96,10 @@ WELCOME_CONTROL_PANEL_TEXT = (
     "⚠️ ₹100 से कम की Payment न तो Valid होगी और न ही उसका Refund दिया जाएगा।\n"
     "💡 Payment भेजने से पहले राशि अच्छी तरह जांच लें।\n\n"
     "📌 RULE 6\n"
-    "📋 अपनी Game को Board से OK करवाना जरूरी है।\n"
-    "❌ अगर Board से OK नहीं हुआ, तो Game मान्य (Valid) नहीं मानी जाएगी।\n\n"
+    "🤖 अपनी Game को Bot से OK करवाना ज़रूरी है।\n"
+    "❌ अगर Bot से OK नहीं हुआ, तो Game मान्य (Valid) नहीं मानी जाएगी।\n\n"
     "📌 RULE 7\n"
-    "⏰ Time निकलने के बाद केवल OK का ही हिसाब-किताब होगा।\n\n"
+    "⏰ Time के बाद केवल OK का ही हिसाब-किताब होगा।\n\n"
     "━━━━━━━━━━━━━━━━━━━━\n\n"
     "⏰ GAME TIMINGS\n\n"
     "🏆 DELHI BAZAR (DB) ➜ 🕒 03:05 PM\n"
@@ -111,7 +111,8 @@ WELCOME_CONTROL_PANEL_TEXT = (
     "━━━━━━━━━━━━━━━━━━━━\n\n"
     "📞 CONTACT: 9654080647\n\n"
     "⚠️ Admin का जो भी फैसला होगा, वही सभी को मान्य होगा।\n\n"
-    "👑 Powered By SUNNY KING OF KHAIWAL"
+    "━━━━━━━━━━━━━━━━━━━━\n\n"
+    "👑❤️‍🔥 Powered By SUNNY KING OF KHAIWAL ❤️‍🔥👑"
 )
 
 CASHBACK_95_5_PROMPT_TEXT = (
