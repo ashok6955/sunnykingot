@@ -1165,11 +1165,15 @@ def build_advanced_quick_actions_markup(message) -> InlineKeyboardMarkup:
 
 
 async def send_welcome_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    message = get_update_message(update)
+    if is_configured_target_group(getattr(message, "chat_id", None)):
+        logger.info("WELCOME_VIDEO skipped configured target group chat_id=%s", message.chat_id)
+        return
+
     if not WELCOME_VIDEO_PATH.is_file():
         logger.warning("Welcome video is missing at path=%s", WELCOME_VIDEO_PATH)
         return
 
-    message = get_update_message(update)
     try:
         await send_with_retry(
             context.bot.send_video,
