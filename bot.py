@@ -19,6 +19,7 @@ from game_total import build_game_total_reply, looks_like_game_message
 BASE_DIR = Path(__file__).resolve().parent
 IMAGES_DIR = BASE_DIR / "images"
 CHART_IMAGE_DIR = BASE_DIR / "chart_image"
+WELCOME_VIDEO_PATH = BASE_DIR / "welcome_video" / "welcome.mp4"
 STATE_FILE = BASE_DIR / "state.json"
 CHAT_MEMORY_FILE = BASE_DIR / "chat_memory.json"
 SETTINGS_FILE = BASE_DIR / "bot_settings.json"
@@ -1163,6 +1164,25 @@ def build_advanced_quick_actions_markup(message) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(rows)
 
 
+async def send_welcome_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not WELCOME_VIDEO_PATH.is_file():
+        logger.warning("Welcome video is missing at path=%s", WELCOME_VIDEO_PATH)
+        return
+
+    message = get_update_message(update)
+    try:
+        await send_with_retry(
+            context.bot.send_video,
+            chat_id=message.chat_id,
+            video=WELCOME_VIDEO_PATH.read_bytes(),
+            supports_streaming=True,
+            **get_business_kwargs(update),
+        )
+    except Exception:
+        # Do not prevent the welcome panel from working if Telegram rejects the media.
+        logger.exception("Could not send welcome video chat_id=%s", message.chat_id)
+
+
 async def ensure_control_panel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message = get_update_message(update)
     if is_configured_target_group(getattr(message, "chat_id", None)):
@@ -1203,6 +1223,7 @@ async def ensure_control_panel(update: Update, context: ContextTypes.DEFAULT_TYP
     state[session_key] = sent_message.message_id
     save_control_panel_state(state)
     mark_quick_actions_sent(message)
+    await send_welcome_video(update, context)
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
