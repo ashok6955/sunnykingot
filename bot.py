@@ -1138,7 +1138,8 @@ async def reply_photo(update: Update, context: ContextTypes.DEFAULT_TYPE, photo)
 
 def build_control_panel_text(message) -> str:
     del message
-    return WELCOME_CONTROL_PANEL_TEXT
+    # Telegram buttons need a parent message; this invisible character keeps the panel button-only.
+    return "\u2063"
 
 
 def build_game_quick_actions_markup(message) -> InlineKeyboardMarkup:
@@ -1242,7 +1243,6 @@ async def ensure_control_panel(update: Update, context: ContextTypes.DEFAULT_TYP
     state[session_key] = sent_message.message_id
     save_control_panel_state(state)
     mark_quick_actions_sent(message)
-    await send_welcome_video(update, context)
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
