@@ -1689,14 +1689,23 @@ async def handle_meetup_qr_only_group(update: Update, context: ContextTypes.DEFA
     if text and is_meetup_qr_request(text):
         await send_next_qr(update, context)
     elif text and is_meetup_game_input(text):
-        # Telegram requires a message to activate a reply keyboard. Keep it invisible and never delete it.
-        await send_with_retry(
+        # Telegram requires a message to activate a reply keyboard; remove only this bot trigger.
+        sent_message = await send_with_retry(
             context.bot.send_message,
             chat_id=message.chat_id,
             text="\u2063",
             reply_markup=build_meetup_qr_keyboard(),
             **get_business_kwargs(update),
         )
+        try:
+            await send_with_retry(
+                context.bot.delete_message,
+                chat_id=message.chat_id,
+                message_id=sent_message.message_id,
+                **get_business_kwargs(update),
+            )
+        except Exception:
+            logger.exception("Could not remove Meetup QR keyboard trigger chat_id=%s", message.chat_id)
 
     # Prevent every other command, panel, video, or response handler in this group.
     raise ApplicationHandlerStop
