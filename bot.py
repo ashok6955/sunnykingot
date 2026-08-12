@@ -50,6 +50,7 @@ HAPPY_HOURS_PATTERN = r"(?i)\bhappy\s*hour[s]?\b|\bhappy\s*hor[s]?\b|\bhappy\s*h
 QUICK_ACTION_CHART = "quick:chart"
 QUICK_ACTION_QR = "quick:qr"
 QUICK_ACTION_MEETUP_QR = "quick:meetup_qr"
+QUICK_ACTION_RULES = "quick:rules"
 QUICK_ACTION_TOTAL = "quick:total"
 QUICK_ACTION_GAME_OK = "quick:game_ok"
 QUICK_ACTION_DS_OK = "quick:ds_ok"
@@ -1142,6 +1143,7 @@ def build_control_panel_text(message) -> str:
 
 def build_game_quick_actions_markup(message) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
+        [InlineKeyboardButton("Rules dekhne ke liye dabaye", callback_data=QUICK_ACTION_RULES)],
         [InlineKeyboardButton("Chart dekhne ke liye dabaye", callback_data=QUICK_ACTION_CHART)],
         [InlineKeyboardButton("QR lene ke liye dabaye", callback_data=QUICK_ACTION_QR)],
         [InlineKeyboardButton("Game OK ke liye dabaye", callback_data=QUICK_ACTION_GAME_OK)],
@@ -1188,6 +1190,16 @@ async def send_welcome_video(update: Update, context: ContextTypes.DEFAULT_TYPE)
     except Exception:
         # Do not prevent the welcome panel from working if Telegram rejects the media.
         logger.exception("Could not send welcome video chat_id=%s", message.chat_id)
+
+
+async def send_rules_book(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Send the complete rules book followed by its attached welcome video."""
+    message = get_update_message(update)
+    if is_configured_target_group(getattr(message, "chat_id", None)):
+        return
+
+    await reply_text(update, context, WELCOME_CONTROL_PANEL_TEXT)
+    await send_welcome_video(update, context)
 
 
 async def ensure_control_panel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -2508,6 +2520,11 @@ async def handle_quick_action_callback(update: Update, context: ContextTypes.DEF
             return
         await query.answer()
         await send_next_qr(update, context)
+        return
+
+    if action == QUICK_ACTION_RULES:
+        await query.answer()
+        await send_rules_book(update, context)
         return
 
     if action == QUICK_ACTION_CHART:
