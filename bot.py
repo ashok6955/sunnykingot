@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 import httpx
 from telegram import CallbackQuery, ChatPermissions, ForceReply, InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.error import TimedOut
-from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes, MessageHandler, TypeHandler, filters
+from telegram.ext import Application, ApplicationHandlerStop, CallbackQueryHandler, CommandHandler, ContextTypes, MessageHandler, TypeHandler, filters
 
 from game_total import build_game_total_reply, looks_like_game_message
 
@@ -31,6 +31,8 @@ CASHBACK_MODE_FILE = BASE_DIR / "cashback_mode.json"
 CONTROL_PANEL_STATE_FILE = BASE_DIR / "control_panel_state.json"
 SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 BOT_TIMEZONE = ZoneInfo("Asia/Kolkata")
+# Meetup Program: only number-only customer messages receive the next QR.
+MEETUP_QR_ONLY_GROUP_ID = -1004394636921
 QUIET_HOURS_START = time(5, 1)
 QUIET_HOURS_END = time(6, 0)
 BUTTON_SESSION_GAP = timedelta(minutes=30)
@@ -1658,6 +1660,25 @@ async def send_next_qr(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     await reply_photo(update, context, image_bytes)
 
 
+def is_number_only_message(text: str) -> bool:
+    """Accept game-style numeric input while rejecting any words or commands."""
+    return bool(re.fullmatch(r"\s*(?=.*\d)[\d\s.,()+\-/]+\s*", text))
+
+
+async def handle_meetup_qr_only_group(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Keep the Meetup Program group silent except for QR replies to numeric input."""
+    message = get_update_message(update)
+    if parse_chat_id(getattr(message, "chat_id", None)) != MEETUP_QR_ONLY_GROUP_ID:
+        return
+
+    text = str(getattr(message, "text", "") or "").strip()
+    if text and is_number_only_message(text):
+        await send_next_qr(update, context)
+
+    # Prevent every other command, panel, video, or response handler in this group.
+    raise ApplicationHandlerStop
+
+
 async def send_chart_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if is_quiet_hours():
         return
@@ -2699,6 +2720,7 @@ def main() -> None:
 
     application.add_error_handler(log_error)
 
+    application.add_handler(MessageHandler(filters.ALL, handle_meetup_qr_only_group), group=-2)
     application.add_handler(TypeHandler(Update, log_incoming_update), group=-1)
     application.add_handler(CallbackQueryHandler(handle_quick_action_callback, pattern=r"^quick:"))
     application.add_handler(CommandHandler("start", start))
