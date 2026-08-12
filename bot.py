@@ -1155,6 +1155,7 @@ def build_main_menu_keyboard() -> ReplyKeyboardMarkup:
     """Keep common actions in Telegram's bottom keyboard instead of cluttering chat history."""
     return ReplyKeyboardMarkup(
         [
+            [KeyboardButton("Menu ke liye dabaye")],
             [KeyboardButton("📜 Rules"), KeyboardButton("📊 Chart"), KeyboardButton("🔳 QR")],
             [KeyboardButton("🎮 Game OK"), KeyboardButton("✅ DS OK"), KeyboardButton("⚙️ Advance")],
         ],
@@ -2601,6 +2602,23 @@ async def show_advanced_menu(update: Update, context: ContextTypes.DEFAULT_TYPE)
     )
 
 
+async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Confirm the reply keyboard menu is active when the customer taps Menu."""
+    if is_quiet_hours():
+        return
+
+    message = get_update_message(update)
+    if is_configured_target_group(getattr(message, "chat_id", None)):
+        return
+
+    await reply_text(
+        update,
+        context,
+        "Menu neeche khul gaya hai. Apna option dabaye.",
+        reply_markup=build_main_menu_keyboard(),
+    )
+
+
 async def relay_source_group_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if is_quiet_hours():
         return
@@ -2787,6 +2805,12 @@ def main() -> None:
     application.add_handler(CommandHandler("chart", send_chart_image))
     application.add_handler(CommandHandler("qr", send_next_qr))
     application.add_handler(CommandHandler("total", send_game_total))
+    application.add_handler(
+        MessageHandler(
+            filters.TEXT & filters.Regex(r"(?i)^\\s*(?:☰\\s*)?menu\\s+ke\\s+liye\\s+dabaye\\s*$"),
+            show_main_menu,
+        )
+    )
     application.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"(?i)^\s*(?:📜\s*)?rules\s*$"), send_rules_book))
     application.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"(?i)^\s*(?:⚙️?\s*)?advance\s*$"), show_advanced_menu))
     application.add_handler(
