@@ -1660,9 +1660,9 @@ async def send_next_qr(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     await reply_photo(update, context, image_bytes)
 
 
-def is_number_only_message(text: str) -> bool:
-    """Accept game-style numeric input while rejecting any words or commands."""
-    return bool(re.fullmatch(r"\s*(?=.*\d)[\d\s.,()+\-/]+\s*", text))
+def is_meetup_game_input(text: str) -> bool:
+    """Treat every customer message containing a digit as a game/number request."""
+    return bool(re.search(r"\d", text))
 
 
 def is_meetup_qr_request(text: str) -> bool:
@@ -1676,7 +1676,7 @@ async def handle_meetup_qr_only_group(update: Update, context: ContextTypes.DEFA
         return
 
     text = str(getattr(message, "text", "") or "").strip()
-    if text and (is_number_only_message(text) or is_meetup_qr_request(text)):
+    if text and (is_meetup_game_input(text) or is_meetup_qr_request(text)):
         await send_next_qr(update, context)
 
     # Prevent every other command, panel, video, or response handler in this group.
