@@ -1665,14 +1665,18 @@ def is_number_only_message(text: str) -> bool:
     return bool(re.fullmatch(r"\s*(?=.*\d)[\d\s.,()+\-/]+\s*", text))
 
 
+def is_meetup_qr_request(text: str) -> bool:
+    return bool(re.fullmatch(r"(?i)\s*(?:qr|q\s*r|\u0915\u094d\u092f\u0942\u0906\u0930)\s*", text))
+
+
 async def handle_meetup_qr_only_group(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Keep the Meetup Program group silent except for QR replies to numeric input."""
+    """Keep the Meetup Program group silent except for QR replies to game input or QR requests."""
     message = get_update_message(update)
     if parse_chat_id(getattr(message, "chat_id", None)) != MEETUP_QR_ONLY_GROUP_ID:
         return
 
     text = str(getattr(message, "text", "") or "").strip()
-    if text and is_number_only_message(text):
+    if text and (is_number_only_message(text) or is_meetup_qr_request(text)):
         await send_next_qr(update, context)
 
     # Prevent every other command, panel, video, or response handler in this group.
