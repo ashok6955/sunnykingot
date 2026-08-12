@@ -29,6 +29,7 @@ BUTTON_SESSION_STATE_FILE = BASE_DIR / "button_session_state.json"
 APPROVAL_STATE_FILE = BASE_DIR / "approval_state.json"
 CASHBACK_MODE_FILE = BASE_DIR / "cashback_mode.json"
 CONTROL_PANEL_STATE_FILE = BASE_DIR / "control_panel_state.json"
+BLOCKED_USERS_FILE = BASE_DIR / "blocked_users.json"
 SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 BOT_TIMEZONE = ZoneInfo("Asia/Kolkata")
 # Meetup Program: only number-only customer messages receive the next QR.
@@ -254,6 +255,35 @@ def save_control_panel_state(state: dict[str, int]) -> None:
         json.dumps(state, indent=2, sort_keys=True, ensure_ascii=False),
         encoding="utf-8",
     )
+
+
+def load_blocked_user_ids() -> set[int]:
+    """Keep user blocks separate from chat settings so they survive deploys."""
+    if not BLOCKED_USERS_FILE.exists():
+        return set()
+
+    try:
+        data = json.loads(BLOCKED_USERS_FILE.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        logger.warning("Could not read blocked users file. Starting with no blocked users.")
+        return set()
+
+    if not isinstance(data, list):
+        return set()
+
+    return {user_id for value in data if (user_id := parse_chat_id(value)) is not None}
+
+
+def save_blocked_user_ids(user_ids: set[int]) -> None:
+    BLOCKED_USERS_FILE.write_text(
+        json.dumps(sorted(user_ids), indent=2),
+        encoding="utf-8",
+    )
+
+
+def is_blocked_user(user_id: int | str | None) -> bool:
+    parsed_user_id = parse_chat_id(user_id)
+    return parsed_user_id is not None and parsed_user_id in load_blocked_user_ids()
 
 
 def clear_control_panel_for_message(message) -> None:
@@ -1078,6 +1108,59 @@ async def ensure_owner_access(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     await reply_text(update, context, "Ye settings command sirf owner chala sakta hai.")
     return False
+
+
+def get_replied_user_id(message) -> int | None:
+    replied_message = getattr(message, "reply_to_message", None)
+    return parse_chat_id(getattr(getattr(replied_message, "from_user", None), "id", None))
+
+
+async def block_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await ensure_owner_access(update, context):
+        return
+
+    message = get_update_message(update)
+    user_id = get_replied_user_id(message)
+    if user_id is None:
+        await reply_text(update, context, "Jis user ko block karna hai, uske message par reply karke `/blockuser` likho.", parse_mode="Markdown")
+        return
+
+    owner_user_id = get_owner_user_id()
+    if user_id == owner_user_id:
+        await reply_text(update, context, "Owner ko block nahi kiya ja sakta.")
+        return
+
+    blocked_user_ids = load_blocked_user_ids()
+    blocked_user_ids.add(user_id)
+    save_blocked_user_ids(blocked_user_ids)
+    await reply_text(update, context, f"User `{user_id}` block ho gaya. Ab is user par bot koi action nahi karega.", parse_mode="Markdown")
+
+
+async def unblock_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await ensure_owner_access(update, context):
+        return
+
+    message = get_update_message(update)
+    user_id = get_replied_user_id(message)
+    if user_id is None:
+        await reply_text(update, context, "Jis user ko unblock karna hai, uske message par reply karke `/unblockuser` likho.", parse_mode="Markdown")
+        return
+
+    blocked_user_ids = load_blocked_user_ids()
+    if user_id not in blocked_user_ids:
+        await reply_text(update, context, f"User `{user_id}` pehle se active hai.", parse_mode="Markdown")
+        return
+
+    blocked_user_ids.remove(user_id)
+    save_blocked_user_ids(blocked_user_ids)
+    await reply_text(update, context, f"User `{user_id}` unblock ho gaya. Ab bot iske messages par kaam karega.", parse_mode="Markdown")
+
+
+async def stop_blocked_user_actions(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Block applies before every other bot handler, without revealing any response to the user."""
+    message = get_update_message(update)
+    if message and is_blocked_user(getattr(getattr(message, "from_user", None), "id", None)):
+        raise ApplicationHandlerStop
 
 
 async def log_incoming_update(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -2786,6 +2869,9 @@ def main() -> None:
 
     application.add_handler(MessageHandler(filters.ALL, handle_meetup_qr_only_group), group=-2)
     application.add_handler(TypeHandler(Update, log_incoming_update), group=-1)
+    application.add_handler(CommandHandler("blockuser", block_user), group=0)
+    application.add_handler(CommandHandler("unblockuser", unblock_user), group=0)
+    application.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, stop_blocked_user_actions), group=0)
     application.add_handler(CallbackQueryHandler(handle_quick_action_callback, pattern=r"^quick:"))
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("codecommand", show_code_commands))
