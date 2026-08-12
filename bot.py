@@ -1689,7 +1689,7 @@ async def handle_meetup_qr_only_group(update: Update, context: ContextTypes.DEFA
         await reply_text(
             update,
             context,
-            "QR lene ke liye neeche button dabaye.",
+            "\u2063",
             reply_markup=build_meetup_qr_markup(),
         )
 
