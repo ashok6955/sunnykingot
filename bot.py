@@ -2815,6 +2815,12 @@ def main() -> None:
     application.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"(?i)^\s*(?:⚙️?\s*)?advance\s*$"), show_advanced_menu))
     application.add_handler(
         MessageHandler(
+            filters.TEXT & filters.Regex(r"(?i)^\s*(?:menu\s+ke\s+liye\s+dabaye|menu)\s*$"),
+            show_main_menu,
+        )
+    )
+    application.add_handler(
+        MessageHandler(
             filters.TEXT & filters.Regex(r"(?i)^\s*total\s*$"),
             send_game_total,
         )
