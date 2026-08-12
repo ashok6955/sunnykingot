@@ -9,7 +9,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import httpx
-from telegram import CallbackQuery, ChatPermissions, ForceReply, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, Update
+from telegram import CallbackQuery, ChatPermissions, ForceReply, InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup, Update
 from telegram.error import TimedOut
 from telegram.ext import Application, ApplicationHandlerStop, CallbackQueryHandler, CommandHandler, ContextTypes, MessageHandler, TypeHandler, filters
 
@@ -1137,8 +1137,7 @@ async def reply_photo(update: Update, context: ContextTypes.DEFAULT_TYPE, photo)
 
 def build_control_panel_text(message) -> str:
     del message
-    # Telegram buttons need a parent message; this invisible character keeps the panel button-only.
-    return "\u2063"
+    return "Menu neeche keyboard me available hai."
 
 
 def build_game_quick_actions_markup(message) -> InlineKeyboardMarkup:
@@ -1150,6 +1149,19 @@ def build_game_quick_actions_markup(message) -> InlineKeyboardMarkup:
         [InlineKeyboardButton("DS OK ke liye dabaye", callback_data=QUICK_ACTION_DS_OK)],
         [InlineKeyboardButton("Advance", callback_data=QUICK_ACTION_ADVANCE)],
     ])
+
+
+def build_main_menu_keyboard() -> ReplyKeyboardMarkup:
+    """Keep common actions in Telegram's bottom keyboard instead of cluttering chat history."""
+    return ReplyKeyboardMarkup(
+        [
+            [KeyboardButton("Rules"), KeyboardButton("Chart"), KeyboardButton("QR")],
+            [KeyboardButton("Game OK"), KeyboardButton("DS OK"), KeyboardButton("Advance")],
+        ],
+        resize_keyboard=True,
+        is_persistent=True,
+        input_field_placeholder="Menu se option choose karein",
+    )
 
 
 def build_advanced_quick_actions_markup(message) -> InlineKeyboardMarkup:
@@ -1208,39 +1220,17 @@ async def ensure_control_panel(update: Update, context: ContextTypes.DEFAULT_TYP
         logger.info("CONTROL_PANEL skipped configured target group chat_id=%s", getattr(message, "chat_id", None))
         return
 
-    session_key = build_button_session_key(message)
-    state = load_control_panel_state()
-    existing_message_id = state.get(session_key)
-    panel_text = build_control_panel_text(message)
-    panel_markup = build_game_quick_actions_markup(message)
-
-    if existing_message_id is not None:
-        try:
-            await send_with_retry(
-                context.bot.edit_message_text,
-                chat_id=message.chat_id,
-                message_id=existing_message_id,
-                text=panel_text,
-                reply_markup=panel_markup,
-                **get_business_kwargs(update),
-            )
-            return
-        except Exception:
-            logger.exception("Could not edit control panel chat_id=%s message_id=%s", message.chat_id, existing_message_id)
-
     if not should_show_quick_actions(message):
         logger.info("CONTROL_PANEL throttled for chat_id=%s", getattr(message, "chat_id", None))
         return
 
-    sent_message = await send_with_retry(
+    await send_with_retry(
         context.bot.send_message,
         chat_id=message.chat_id,
-        text=panel_text,
-        reply_markup=panel_markup,
+        text=build_control_panel_text(message),
+        reply_markup=build_main_menu_keyboard(),
         **get_business_kwargs(update),
     )
-    state[session_key] = sent_message.message_id
-    save_control_panel_state(state)
     mark_quick_actions_sent(message)
 
 
@@ -2563,9 +2553,9 @@ async def handle_quick_action_callback(update: Update, context: ContextTypes.DEF
         message = get_update_message(update)
         await query.answer()
         await query.edit_message_text(
-            text=build_control_panel_text(message),
-            reply_markup=build_game_quick_actions_markup(message),
+            text="Main menu neeche keyboard me available hai.",
         )
+        await ensure_control_panel(update, context)
         return
 
     if action == QUICK_ACTION_CASHBACK_95_5:
@@ -2594,6 +2584,16 @@ async def handle_quick_action_callback(update: Update, context: ContextTypes.DEF
         return
 
     await query.answer()
+
+
+async def show_advanced_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    message = get_update_message(update)
+    await reply_text(
+        update,
+        context,
+        "Advance options:",
+        reply_markup=build_advanced_quick_actions_markup(message),
+    )
 
 
 async def relay_source_group_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -2783,6 +2783,8 @@ def main() -> None:
     application.add_handler(CommandHandler("chart", send_chart_image))
     application.add_handler(CommandHandler("qr", send_next_qr))
     application.add_handler(CommandHandler("total", send_game_total))
+    application.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"(?i)^\s*rules\s*$"), send_rules_book))
+    application.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"(?i)^\s*advance\s*$"), show_advanced_menu))
     application.add_handler(
         MessageHandler(
             filters.TEXT & filters.Regex(r"(?i)^\s*total\s*$"),
