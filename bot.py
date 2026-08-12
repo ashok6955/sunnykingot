@@ -1137,7 +1137,7 @@ async def reply_photo(update: Update, context: ContextTypes.DEFAULT_TYPE, photo)
 
 def build_control_panel_text(message) -> str:
     del message
-    return "Menu neeche keyboard me available hai."
+    return "☰"
 
 
 def build_game_quick_actions_markup(message) -> InlineKeyboardMarkup:
@@ -1155,12 +1155,12 @@ def build_main_menu_keyboard() -> ReplyKeyboardMarkup:
     """Keep common actions in Telegram's bottom keyboard instead of cluttering chat history."""
     return ReplyKeyboardMarkup(
         [
-            [KeyboardButton("Rules"), KeyboardButton("Chart"), KeyboardButton("QR")],
-            [KeyboardButton("Game OK"), KeyboardButton("DS OK"), KeyboardButton("Advance")],
+            [KeyboardButton("📜 Rules"), KeyboardButton("📊 Chart"), KeyboardButton("🔳 QR")],
+            [KeyboardButton("🎮 Game OK"), KeyboardButton("✅ DS OK"), KeyboardButton("⚙️ Advance")],
         ],
         resize_keyboard=True,
         is_persistent=True,
-        input_field_placeholder="Menu se option choose karein",
+        input_field_placeholder="Neeche menu se option choose karein",
     )
 
 
@@ -1218,10 +1218,6 @@ async def ensure_control_panel(update: Update, context: ContextTypes.DEFAULT_TYP
     message = get_update_message(update)
     if is_configured_target_group(getattr(message, "chat_id", None)):
         logger.info("CONTROL_PANEL skipped configured target group chat_id=%s", getattr(message, "chat_id", None))
-        return
-
-    if not should_show_quick_actions(message):
-        logger.info("CONTROL_PANEL throttled for chat_id=%s", getattr(message, "chat_id", None))
         return
 
     await send_with_retry(
@@ -2718,13 +2714,12 @@ async def remember_recent_game_message(update: Update, context: ContextTypes.DEF
         logger.info("MEMORY_HANDLER skipped trigger text chat_id=%s", getattr(message, "chat_id", None))
         return
 
-    if should_show_quick_actions(message):
-        try:
-            clear_control_panel_for_message(message)
-            await ensure_control_panel(update, context)
-            logger.info("MEMORY_HANDLER refreshed control panel chat_id=%s", getattr(message, "chat_id", None))
-        except Exception:
-            logger.exception("MEMORY_HANDLER could not refresh control panel chat_id=%s", getattr(message, "chat_id", None))
+    try:
+        clear_control_panel_for_message(message)
+        await ensure_control_panel(update, context)
+        logger.info("MEMORY_HANDLER refreshed control panel chat_id=%s", getattr(message, "chat_id", None))
+    except Exception:
+        logger.exception("MEMORY_HANDLER could not refresh control panel chat_id=%s", getattr(message, "chat_id", None))
 
     is_game_text = looks_like_game_message(text)
 
@@ -2783,8 +2778,8 @@ def main() -> None:
     application.add_handler(CommandHandler("chart", send_chart_image))
     application.add_handler(CommandHandler("qr", send_next_qr))
     application.add_handler(CommandHandler("total", send_game_total))
-    application.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"(?i)^\s*rules\s*$"), send_rules_book))
-    application.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"(?i)^\s*advance\s*$"), show_advanced_menu))
+    application.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"(?i)^\s*(?:📜\s*)?rules\s*$"), send_rules_book))
+    application.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"(?i)^\s*(?:⚙️?\s*)?advance\s*$"), show_advanced_menu))
     application.add_handler(
         MessageHandler(
             filters.TEXT & filters.Regex(r"(?i)^\s*total\s*$"),
@@ -2841,7 +2836,7 @@ def main() -> None:
     )
     application.add_handler(
         MessageHandler(
-            filters.TEXT & filters.Regex(r"(?i)^\s*ds\s+ok\s*$"),
+            filters.TEXT & filters.Regex(r"(?i)^\s*(?:✅\s*)?ds\s+ok\s*$"),
             send_ds_ok_banner,
         )
     )
