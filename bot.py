@@ -49,6 +49,7 @@ GAME_OK_TRIGGER_TEXT = "\U0001F3AE GAME OK \u2714\ufe0f\u2714\ufe0f"
 HAPPY_HOURS_PATTERN = r"(?i)\bhappy\s*hour[s]?\b|\bhappy\s*hor[s]?\b|\bhappy\s*hourse\b"
 QUICK_ACTION_CHART = "quick:chart"
 QUICK_ACTION_QR = "quick:qr"
+QUICK_ACTION_MEETUP_QR = "quick:meetup_qr"
 QUICK_ACTION_TOTAL = "quick:total"
 QUICK_ACTION_GAME_OK = "quick:game_ok"
 QUICK_ACTION_DS_OK = "quick:ds_ok"
@@ -1669,15 +1670,28 @@ def is_meetup_qr_request(text: str) -> bool:
     return bool(re.fullmatch(r"(?i)\s*(?:qr|q\s*r|\u0915\u094d\u092f\u0942\u0906\u0930)\s*", text))
 
 
+def build_meetup_qr_markup() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("QR lene ke liye dabaye", callback_data=QUICK_ACTION_MEETUP_QR)],
+    ])
+
+
 async def handle_meetup_qr_only_group(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Keep the Meetup Program group silent except for QR replies to game input or QR requests."""
+    """Show only a QR button for games; text QR requests receive the next QR directly."""
     message = get_update_message(update)
     if parse_chat_id(getattr(message, "chat_id", None)) != MEETUP_QR_ONLY_GROUP_ID:
         return
 
     text = str(getattr(message, "text", "") or "").strip()
-    if text and (is_meetup_game_input(text) or is_meetup_qr_request(text)):
+    if text and is_meetup_qr_request(text):
         await send_next_qr(update, context)
+    elif text and is_meetup_game_input(text):
+        await reply_text(
+            update,
+            context,
+            "QR lene ke liye neeche button dabaye.",
+            reply_markup=build_meetup_qr_markup(),
+        )
 
     # Prevent every other command, panel, video, or response handler in this group.
     raise ApplicationHandlerStop
@@ -2486,6 +2500,15 @@ async def handle_quick_action_callback(update: Update, context: ContextTypes.DEF
         return
 
     action = str(getattr(query, "data", "") or "").strip()
+
+    if action == QUICK_ACTION_MEETUP_QR:
+        message = get_update_message(update)
+        if parse_chat_id(getattr(message, "chat_id", None)) != MEETUP_QR_ONLY_GROUP_ID:
+            await query.answer()
+            return
+        await query.answer()
+        await send_next_qr(update, context)
+        return
 
     if action == QUICK_ACTION_CHART:
         await query.answer()
