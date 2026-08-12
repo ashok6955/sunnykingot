@@ -9,7 +9,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import httpx
-from telegram import CallbackQuery, ChatPermissions, ForceReply, InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import CallbackQuery, ChatPermissions, ForceReply, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, Update
 from telegram.error import TimedOut
 from telegram.ext import Application, ApplicationHandlerStop, CallbackQueryHandler, CommandHandler, ContextTypes, MessageHandler, TypeHandler, filters
 
@@ -49,7 +49,6 @@ GAME_OK_TRIGGER_TEXT = "\U0001F3AE GAME OK \u2714\ufe0f\u2714\ufe0f"
 HAPPY_HOURS_PATTERN = r"(?i)\bhappy\s*hour[s]?\b|\bhappy\s*hor[s]?\b|\bhappy\s*hourse\b"
 QUICK_ACTION_CHART = "quick:chart"
 QUICK_ACTION_QR = "quick:qr"
-QUICK_ACTION_MEETUP_QR = "quick:meetup_qr"
 QUICK_ACTION_RULES = "quick:rules"
 QUICK_ACTION_TOTAL = "quick:total"
 QUICK_ACTION_GAME_OK = "quick:game_ok"
@@ -1679,17 +1678,23 @@ def is_meetup_game_input(text: str) -> bool:
 
 
 def is_meetup_qr_request(text: str) -> bool:
-    return bool(re.fullmatch(r"(?i)\s*(?:qr|q\s*r|\u0915\u094d\u092f\u0942\u0906\u0930)\s*", text))
+    return bool(re.fullmatch(
+        r"(?i)\s*(?:qr|q\s*r|\u0915\u094d\u092f\u0942\u0906\u0930|qr\s+lene\s+ke\s+liye\s+dabaye)\s*",
+        text,
+    ))
 
 
-def build_meetup_qr_markup() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("QR lene ke liye dabaye", callback_data=QUICK_ACTION_MEETUP_QR)],
-    ])
+def build_meetup_qr_keyboard() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        [["QR lene ke liye dabaye"]],
+        resize_keyboard=True,
+        one_time_keyboard=False,
+        input_field_placeholder="QR lene ke liye button dabaye",
+    )
 
 
 async def handle_meetup_qr_only_group(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Show only a QR button for games; text QR requests receive the next QR directly."""
+    """Show a compact QR keyboard for games; QR requests receive the next QR directly."""
     message = get_update_message(update)
     if parse_chat_id(getattr(message, "chat_id", None)) != MEETUP_QR_ONLY_GROUP_ID:
         return
@@ -1698,12 +1703,23 @@ async def handle_meetup_qr_only_group(update: Update, context: ContextTypes.DEFA
     if text and is_meetup_qr_request(text):
         await send_next_qr(update, context)
     elif text and is_meetup_game_input(text):
-        await reply_text(
-            update,
-            context,
-            "\u2063",
-            reply_markup=build_meetup_qr_markup(),
+        # Reply keyboards need a message to activate; delete the invisible trigger immediately.
+        sent_message = await send_with_retry(
+            context.bot.send_message,
+            chat_id=message.chat_id,
+            text="\u2063",
+            reply_markup=build_meetup_qr_keyboard(),
+            **get_business_kwargs(update),
         )
+        try:
+            await send_with_retry(
+                context.bot.delete_message,
+                chat_id=message.chat_id,
+                message_id=sent_message.message_id,
+                **get_business_kwargs(update),
+            )
+        except Exception:
+            logger.exception("Could not remove Meetup QR keyboard trigger chat_id=%s", message.chat_id)
 
     # Prevent every other command, panel, video, or response handler in this group.
     raise ApplicationHandlerStop
@@ -2512,15 +2528,6 @@ async def handle_quick_action_callback(update: Update, context: ContextTypes.DEF
         return
 
     action = str(getattr(query, "data", "") or "").strip()
-
-    if action == QUICK_ACTION_MEETUP_QR:
-        message = get_update_message(update)
-        if parse_chat_id(getattr(message, "chat_id", None)) != MEETUP_QR_ONLY_GROUP_ID:
-            await query.answer()
-            return
-        await query.answer()
-        await send_next_qr(update, context)
-        return
 
     if action == QUICK_ACTION_RULES:
         await query.answer()
