@@ -1852,7 +1852,7 @@ async def handle_meetup_qr_only_group(update: Update, context: ContextTypes.DEFA
 
     text = str(getattr(message, "text", "") or "").strip()
     # Owner commands must bypass this QR-only group filter.
-    if text.lower().startswith(("/blockuser", "/unblockuser", "/setowner", "/myid")):
+    if text.lower().startswith(("/blockuser", "/unblockuser", "/setowner", "/myid", "myid", "my id")):
         return
 
     if text and is_meetup_qr_request(text):
@@ -2978,6 +2978,12 @@ def main() -> None:
     application.add_handler(CallbackQueryHandler(handle_quick_action_callback, pattern=r"^quick:"))
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("myid", send_my_id))
+    application.add_handler(
+        MessageHandler(
+            filters.TEXT & filters.Regex(r"(?i)^\s*(?:my\s*id|meri\s*id|id)\s*$"),
+            send_my_id,
+        )
+    )
     application.add_handler(CommandHandler("setowner", set_owner))
     application.add_handler(CommandHandler("codecommand", show_code_commands))
     application.add_handler(CommandHandler("groupid", send_group_id))
