@@ -1172,32 +1172,23 @@ def get_command_user_id(message, context: ContextTypes.DEFAULT_TYPE) -> int | No
 
 
 async def ensure_block_manager_access(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
-    """Only the configured owner or a chat administrator can change user blocks."""
-    if await ensure_owner_access(update, context) is False:
+    """Only the configured owner can block or unblock a customer."""
+    owner_user_id = get_owner_user_id()
+    if owner_user_id is None:
+        await reply_text(
+            update,
+            context,
+            "Pehle owner ki private chat se `/setowner` chalao. Uske baad block/unblock sirf owner chala sakega.",
+            parse_mode="Markdown",
+        )
         return False
-
-    if get_owner_user_id() is not None:
-        return True
 
     message = get_update_message(update)
-    chat = getattr(message, "chat", None)
-    chat_type = str(getattr(chat, "type", "") or "")
     user_id = parse_chat_id(getattr(getattr(message, "from_user", None), "id", None))
-    if chat_type not in {"group", "supergroup"} or user_id is None:
-        await reply_text(update, context, "Block command group admin chalayega. Private use ke liye pehle OWNER_USER_ID set karo.")
-        return False
-
-    try:
-        member = await context.bot.get_chat_member(chat_id=message.chat_id, user_id=user_id)
-    except Exception:
-        logger.exception("Could not verify block manager chat_id=%s user_id=%s", message.chat_id, user_id)
-        await reply_text(update, context, "Admin check nahi ho paaya. Bot ko group me admin banao aur phir try karo.")
-        return False
-
-    if str(getattr(member, "status", "")) in {"administrator", "creator", "owner"}:
+    if user_id == owner_user_id:
         return True
 
-    await reply_text(update, context, "Sirf group admin hi user block ya unblock kar sakta hai.")
+    await reply_text(update, context, "Block/unblock command sirf bot owner chala sakta hai.")
     return False
 
 
@@ -1277,7 +1268,7 @@ async def set_owner(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def stop_blocked_user_actions(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Block applies before every other bot handler, without revealing any response to the user."""
+    """Block applies before every other bot handler, including commands."""
     message = get_update_message(update)
     if message and is_blocked_user(getattr(getattr(message, "from_user", None), "id", None)):
         raise ApplicationHandlerStop
@@ -3091,11 +3082,11 @@ def main() -> None:
 
     application.add_error_handler(log_error)
 
+    application.add_handler(TypeHandler(Update, log_incoming_update), group=-3)
     application.add_handler(MessageHandler(filters.ALL, handle_meetup_qr_only_group), group=-2)
-    application.add_handler(TypeHandler(Update, log_incoming_update), group=-1)
     application.add_handler(CommandHandler("blockuser", block_user), group=0)
     application.add_handler(CommandHandler("unblockuser", unblock_user), group=0)
-    application.add_handler(MessageHandler(BLOCKED_USER_FILTER, stop_blocked_user_actions), group=0)
+    application.add_handler(MessageHandler(BLOCKED_USER_FILTER, stop_blocked_user_actions), group=-1)
     application.add_handler(CallbackQueryHandler(handle_quick_action_callback, pattern=r"^quick:"))
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("myid", send_my_id))
