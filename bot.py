@@ -2695,6 +2695,16 @@ async def handle_quick_action_callback(update: Update, context: ContextTypes.DEF
         except Exception:
             logger.exception("Could not delete used menu message")
 
+    async def restore_menu_button() -> None:
+        """Leave a compact way to reopen the menu after sending a QR code."""
+        try:
+            await query.edit_message_text(
+                text="Menu",
+                reply_markup=build_menu_button_markup(),
+            )
+        except Exception:
+            logger.exception("Could not restore menu button after QR action")
+
     if action == QUICK_ACTION_MENU:
         await query.answer()
         await query.edit_message_text(
@@ -2718,7 +2728,7 @@ async def handle_quick_action_callback(update: Update, context: ContextTypes.DEF
     if action == QUICK_ACTION_QR:
         await query.answer()
         await send_next_qr(update, context)
-        await remove_used_menu()
+        await restore_menu_button()
         return
 
     if action == QUICK_ACTION_TOTAL:
