@@ -287,6 +287,16 @@ def is_blocked_user(user_id: int | str | None) -> bool:
     return parsed_user_id is not None and parsed_user_id in load_blocked_user_ids()
 
 
+class BlockedUserFilter(filters.MessageFilter):
+    """Match only blocked users, without intercepting every normal customer message."""
+
+    def filter(self, message) -> bool:
+        return is_blocked_user(getattr(getattr(message, "from_user", None), "id", None))
+
+
+BLOCKED_USER_FILTER = BlockedUserFilter()
+
+
 def clear_control_panel_for_message(message) -> None:
     session_key = build_button_session_key(message)
     state = load_control_panel_state()
@@ -2975,7 +2985,7 @@ def main() -> None:
     application.add_handler(TypeHandler(Update, log_incoming_update), group=-1)
     application.add_handler(CommandHandler("blockuser", block_user), group=0)
     application.add_handler(CommandHandler("unblockuser", unblock_user), group=0)
-    application.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, stop_blocked_user_actions), group=0)
+    application.add_handler(MessageHandler(BLOCKED_USER_FILTER & ~filters.COMMAND, stop_blocked_user_actions), group=0)
     application.add_handler(CallbackQueryHandler(handle_quick_action_callback, pattern=r"^quick:"))
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("myid", send_my_id))
