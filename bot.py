@@ -1116,14 +1116,54 @@ def get_replied_user_id(message) -> int | None:
     return parse_chat_id(getattr(getattr(replied_message, "from_user", None), "id", None))
 
 
+def get_command_user_id(message, context: ContextTypes.DEFAULT_TYPE) -> int | None:
+    """Accept a replied user, or an explicit numeric ID for reliable moderation."""
+    replied_user_id = get_replied_user_id(message)
+    if replied_user_id is not None:
+        return replied_user_id
+
+    command_args = list(getattr(context, "args", []) or [])
+    return parse_chat_id(command_args[0]) if command_args else None
+
+
+async def ensure_block_manager_access(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    """Only the configured owner or a chat administrator can change user blocks."""
+    if await ensure_owner_access(update, context) is False:
+        return False
+
+    if get_owner_user_id() is not None:
+        return True
+
+    message = get_update_message(update)
+    chat = getattr(message, "chat", None)
+    chat_type = str(getattr(chat, "type", "") or "")
+    user_id = parse_chat_id(getattr(getattr(message, "from_user", None), "id", None))
+    if chat_type not in {"group", "supergroup"} or user_id is None:
+        await reply_text(update, context, "Block command group admin chalayega. Private use ke liye pehle OWNER_USER_ID set karo.")
+        return False
+
+    try:
+        member = await context.bot.get_chat_member(chat_id=message.chat_id, user_id=user_id)
+    except Exception:
+        logger.exception("Could not verify block manager chat_id=%s user_id=%s", message.chat_id, user_id)
+        await reply_text(update, context, "Admin check nahi ho paaya. Bot ko group me admin banao aur phir try karo.")
+        return False
+
+    if str(getattr(member, "status", "")) in {"administrator", "creator", "owner"}:
+        return True
+
+    await reply_text(update, context, "Sirf group admin hi user block ya unblock kar sakta hai.")
+    return False
+
+
 async def block_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not await ensure_owner_access(update, context):
+    if not await ensure_block_manager_access(update, context):
         return
 
     message = get_update_message(update)
-    user_id = get_replied_user_id(message)
+    user_id = get_command_user_id(message, context)
     if user_id is None:
-        await reply_text(update, context, "Jis user ko block karna hai, uske message par reply karke `/blockuser` likho.", parse_mode="Markdown")
+        await reply_text(update, context, "User ke message par reply karke `/blockuser` likho, ya `/blockuser USER_ID` likho.", parse_mode="Markdown")
         return
 
     owner_user_id = get_owner_user_id()
@@ -1138,13 +1178,13 @@ async def block_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
 
 async def unblock_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not await ensure_owner_access(update, context):
+    if not await ensure_block_manager_access(update, context):
         return
 
     message = get_update_message(update)
-    user_id = get_replied_user_id(message)
+    user_id = get_command_user_id(message, context)
     if user_id is None:
-        await reply_text(update, context, "Jis user ko unblock karna hai, uske message par reply karke `/unblockuser` likho.", parse_mode="Markdown")
+        await reply_text(update, context, "User ke message par reply karke `/unblockuser` likho, ya `/unblockuser USER_ID` likho.", parse_mode="Markdown")
         return
 
     blocked_user_ids = load_blocked_user_ids()
@@ -1155,6 +1195,36 @@ async def unblock_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     blocked_user_ids.remove(user_id)
     save_blocked_user_ids(blocked_user_ids)
     await reply_text(update, context, f"User `{user_id}` unblock ho gaya. Ab bot iske messages par kaam karega.", parse_mode="Markdown")
+
+
+async def send_my_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Lets a private-chat customer share their Telegram ID with the owner if needed."""
+    message = get_update_message(update)
+    user_id = parse_chat_id(getattr(getattr(message, "from_user", None), "id", None))
+    if user_id is None:
+        return
+    await reply_text(update, context, f"Aapki Telegram ID: `{user_id}`", parse_mode="Markdown")
+
+
+async def set_owner(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """One-time private setup so only the bot owner can moderate private customers."""
+    if get_owner_user_id() is not None:
+        await reply_text(update, context, "Owner pehle se set hai. Owner change ke liye Render me OWNER_USER_ID update karo.")
+        return
+
+    message = get_update_message(update)
+    if str(getattr(getattr(message, "chat", None), "type", "") or "") != "private":
+        await reply_text(update, context, "Owner set karne ke liye bot ki private chat me `/setowner` likho.", parse_mode="Markdown")
+        return
+
+    user_id = parse_chat_id(getattr(getattr(message, "from_user", None), "id", None))
+    if user_id is None:
+        return
+
+    settings = load_settings()
+    settings["owner_user_id"] = user_id
+    save_settings(settings)
+    await reply_text(update, context, f"Owner set ho gaya. Aapki Telegram ID: `{user_id}`\nAb `/blockuser USER_ID` aur `/unblockuser USER_ID` private chat me chala sakte ho.", parse_mode="Markdown")
 
 
 async def stop_blocked_user_actions(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -2205,9 +2275,9 @@ async def process_game_approval(
     invalid_message_text: str,
     require_payment_verification: bool = False,
     clear_cashback_mode_on_success: bool = False,
-) -> None:
+) -> bool:
     if is_game_approval_blocked():
-        return
+        return False
 
     message = get_update_message(update)
     source_messages, used_reply_message, reply_message_id = collect_game_source_messages(message)
@@ -2222,21 +2292,21 @@ async def process_game_approval(
 
     if not source_messages:
         await reply_text(update, context, no_message_text, parse_mode="Markdown")
-        return
+        return False
 
     invalid_messages = [text for text in source_messages if not looks_like_game_message(text)]
     if invalid_messages:
         await reply_text(update, context, invalid_message_text, parse_mode="Markdown")
-        return
+        return False
 
     if require_payment_verification:
         payment_verified = await is_recent_valid_payment_screenshot(context.bot, message.chat_id)
         if not payment_verified:
-            return
+            return False
 
     if is_duplicate_approval(message, source_messages, reply_message_id):
         await reply_text(update, context, "Ye game pehle hi ok ho chuki hai.")
-        return
+        return False
 
     await reply_text(update, context, success_text)
     for source_text in source_messages:
@@ -2246,6 +2316,7 @@ async def process_game_approval(
     clear_processed_game_memory(message.chat_id, source_messages, used_reply_message)
     if clear_cashback_mode_on_success:
         clear_cashback_mode(message)
+    return True
 
 
 async def send_game_ok(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -2392,9 +2463,9 @@ async def send_game_ok_plus(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     clear_processed_game_memory(message.chat_id, source_messages, used_reply_message)
 
 
-async def send_game_ok_from_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def send_game_ok_from_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     if is_quiet_hours() or is_game_approval_blocked():
-        return
+        return False
 
     message = get_update_message(update)
     target_group_id = get_game_target_group_id()
@@ -2405,10 +2476,10 @@ async def send_game_ok_from_button(update: Update, context: ContextTypes.DEFAULT
             f"`{GAME_OK_TRIGGER_TEXT}` target group set nahi hai. Pehle `/setgametargetgroup -1004304577201` ya target group ke andar `/setgametargetgroup` likho.",
             parse_mode="Markdown",
         )
-        return
+        return False
 
     success_text = get_cashback_success_text_for_message(message) or GAME_OK_SUCCESS_TEXT
-    await process_game_approval(
+    return await process_game_approval(
         update,
         context,
         target_group_id=target_group_id,
@@ -2469,9 +2540,9 @@ async def send_game_ok_manual_banner(update: Update, context: ContextTypes.DEFAU
         invalid_message_text=f"Recent saved message game format me nahi mila. Number wala game message bhejo ya game message par reply karke `{GAME_OK_TRIGGER_TEXT}` likho.",
     )
 
-async def send_ds_ok_from_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def send_ds_ok_from_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     if is_quiet_hours() or is_game_approval_blocked():
-        return
+        return False
 
     message = get_update_message(update)
     target_group_id = get_target_group_id()
@@ -2482,9 +2553,9 @@ async def send_ds_ok_from_button(update: Update, context: ContextTypes.DEFAULT_T
             "Target group set nahi hai. Pehle `/settargetgroup -1004304577201` ya target group ke andar `/settargetgroup` likho.",
             parse_mode="Markdown",
         )
-        return
+        return False
 
-    await process_game_approval(
+    return await process_game_approval(
         update,
         context,
         target_group_id=target_group_id,
@@ -2655,14 +2726,16 @@ async def handle_quick_action_callback(update: Update, context: ContextTypes.DEF
 
     if action == QUICK_ACTION_GAME_OK:
         await query.answer()
-        await send_game_ok_from_button(update, context)
-        await remove_used_menu()
+        approval_completed = await send_game_ok_from_button(update, context)
+        if approval_completed:
+            await remove_used_menu()
         return
 
     if action == QUICK_ACTION_DS_OK:
         await query.answer()
-        await send_ds_ok_from_button(update, context)
-        await remove_used_menu()
+        approval_completed = await send_ds_ok_from_button(update, context)
+        if approval_completed:
+            await remove_used_menu()
         return
 
     if action == QUICK_ACTION_ADVANCE:
@@ -2911,6 +2984,8 @@ def main() -> None:
     application.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, stop_blocked_user_actions), group=0)
     application.add_handler(CallbackQueryHandler(handle_quick_action_callback, pattern=r"^quick:"))
     application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("myid", send_my_id))
+    application.add_handler(CommandHandler("setowner", set_owner))
     application.add_handler(CommandHandler("codecommand", show_code_commands))
     application.add_handler(CommandHandler("groupid", send_group_id))
     application.add_handler(CommandHandler("targetgroup", show_target_group))
