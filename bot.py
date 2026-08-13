@@ -3001,7 +3001,12 @@ def main() -> None:
     application.add_handler(CommandHandler("myid", send_my_id))
     application.add_handler(
         MessageHandler(
-            filters.TEXT & filters.Regex(r"(?i)^\s*(?:my\s*id|meri\s*id|id)\s*$"),
+            filters.TEXT
+            & filters.Regex(
+                r"(?i)^\s*(?:my\s*id|myid|mai\s*id|meri\s*id|"
+                r"\u092e\u093e\u0908\s*\u0906\u0908\u0921\u0940|"
+                r"\u092e\u0947\u0930\u0940\s*\u0906\u0908\u0921\u0940|id)\s*$"
+            ),
             send_my_id,
         )
     )
