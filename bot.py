@@ -1208,10 +1208,14 @@ async def unblock_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 
 async def send_my_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Lets a private-chat customer share their Telegram ID with the owner if needed."""
+    """Show the replied customer's ID, or the sender's own ID when not replying."""
     message = get_update_message(update)
-    user_id = parse_chat_id(getattr(getattr(message, "from_user", None), "id", None))
+    replied_user_id = get_replied_user_id(message)
+    user_id = replied_user_id or parse_chat_id(getattr(getattr(message, "from_user", None), "id", None))
     if user_id is None:
+        return
+    if replied_user_id is not None:
+        await reply_text(update, context, f"Replied user ki Telegram ID: `{user_id}`", parse_mode="Markdown")
         return
     await reply_text(update, context, f"Aapki Telegram ID: `{user_id}`", parse_mode="Markdown")
 
