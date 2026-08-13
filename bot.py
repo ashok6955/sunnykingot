@@ -1781,6 +1781,10 @@ async def handle_meetup_qr_only_group(update: Update, context: ContextTypes.DEFA
         return
 
     text = str(getattr(message, "text", "") or "").strip()
+    # Owner commands must bypass this QR-only group filter.
+    if text.lower().startswith(("/blockuser", "/unblockuser")):
+        return
+
     if text and is_meetup_qr_request(text):
         await send_next_qr(update, context)
     elif text and is_meetup_game_input(text):
