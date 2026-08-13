@@ -1845,38 +1845,25 @@ def build_meetup_qr_keyboard() -> ReplyKeyboardMarkup:
 
 
 async def handle_meetup_qr_only_group(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Show a compact QR keyboard for games; QR requests receive the next QR directly."""
+    """Handle the Meetup group without letting the QR-only filter hide the game menu."""
     message = get_update_message(update)
     if parse_chat_id(getattr(message, "chat_id", None)) != MEETUP_QR_ONLY_GROUP_ID:
         return
 
     text = str(getattr(message, "text", "") or "").strip()
     # Owner commands must bypass this QR-only group filter.
-    if text.lower().startswith(("/blockuser", "/unblockuser")):
+    if text.lower().startswith(("/blockuser", "/unblockuser", "/setowner", "/myid")):
         return
 
     if text and is_meetup_qr_request(text):
         await send_next_qr(update, context)
-    elif text and is_meetup_game_input(text):
-        # Telegram requires a message to activate a reply keyboard; remove only this bot trigger.
-        sent_message = await send_with_retry(
-            context.bot.send_message,
-            chat_id=message.chat_id,
-            text="\u2063",
-            reply_markup=build_meetup_qr_keyboard(),
-            **get_business_kwargs(update),
-        )
-        try:
-            await send_with_retry(
-                context.bot.delete_message,
-                chat_id=message.chat_id,
-                message_id=sent_message.message_id,
-                **get_business_kwargs(update),
-            )
-        except Exception:
-            logger.exception("Could not remove Meetup QR keyboard trigger chat_id=%s", message.chat_id)
+        raise ApplicationHandlerStop
 
-    # Prevent every other command, panel, video, or response handler in this group.
+    # Let game messages continue to normal memory + menu handlers below.
+    if text and is_meetup_game_input(text):
+        return
+
+    # Ignore all other text in this special group.
     raise ApplicationHandlerStop
 
 
@@ -2468,6 +2455,9 @@ async def send_game_ok_from_button(update: Update, context: ContextTypes.DEFAULT
         return False
 
     message = get_update_message(update)
+    callback_message = getattr(getattr(update, "callback_query", None), "message", None)
+    if callback_message is not None:
+        message = callback_message
     target_group_id = get_game_target_group_id()
     if target_group_id is None:
         await reply_text(
@@ -2545,6 +2535,9 @@ async def send_ds_ok_from_button(update: Update, context: ContextTypes.DEFAULT_T
         return False
 
     message = get_update_message(update)
+    callback_message = getattr(getattr(update, "callback_query", None), "message", None)
+    if callback_message is not None:
+        message = callback_message
     target_group_id = get_target_group_id()
     if target_group_id is None:
         await reply_text(
