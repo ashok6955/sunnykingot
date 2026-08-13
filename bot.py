@@ -1376,13 +1376,13 @@ async def send_rules_book(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     await send_welcome_video(update, context)
 
 
-async def ensure_control_panel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def ensure_control_panel(update: Update, context: ContextTypes.DEFAULT_TYPE, *, force: bool = False) -> None:
     message = get_update_message(update)
     if is_configured_target_group(getattr(message, "chat_id", None)):
         logger.info("CONTROL_PANEL skipped configured target group chat_id=%s", getattr(message, "chat_id", None))
         return
 
-    if not should_show_quick_actions(message):
+    if not force and not should_show_quick_actions(message):
         return
 
     await send_with_retry(
@@ -2927,13 +2927,6 @@ async def remember_recent_game_message(update: Update, context: ContextTypes.DEF
         logger.info("MEMORY_HANDLER skipped trigger text chat_id=%s", getattr(message, "chat_id", None))
         return
 
-    try:
-        clear_control_panel_for_message(message)
-        await ensure_control_panel(update, context)
-        logger.info("MEMORY_HANDLER refreshed control panel chat_id=%s", getattr(message, "chat_id", None))
-    except Exception:
-        logger.exception("MEMORY_HANDLER could not refresh control panel chat_id=%s", getattr(message, "chat_id", None))
-
     is_game_text = looks_like_game_message(text)
 
     if is_game_text:
@@ -2945,7 +2938,15 @@ async def remember_recent_game_message(update: Update, context: ContextTypes.DEF
         save_chat_memory(memory)
         clear_approval_state_for_chat(message)
         logger.info("MEMORY_HANDLER saved game chat_id=%s count=%s", getattr(message, "chat_id", None), len(memory[chat_key]))
-    else:
+
+    try:
+        clear_control_panel_for_message(message)
+        await ensure_control_panel(update, context, force=is_game_text)
+        logger.info("MEMORY_HANDLER refreshed control panel chat_id=%s", getattr(message, "chat_id", None))
+    except Exception:
+        logger.exception("MEMORY_HANDLER could not refresh control panel chat_id=%s", getattr(message, "chat_id", None))
+
+    if not is_game_text:
         logger.info("MEMORY_HANDLER non-game text chat_id=%s", getattr(message, "chat_id", None))
 
     return
