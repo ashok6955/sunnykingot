@@ -1158,7 +1158,18 @@ async def ensure_owner_access(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 def get_replied_user_id(message) -> int | None:
     replied_message = getattr(message, "reply_to_message", None)
-    return parse_chat_id(getattr(getattr(replied_message, "from_user", None), "id", None))
+    direct_user_id = parse_chat_id(getattr(getattr(replied_message, "from_user", None), "id", None))
+    if direct_user_id is not None:
+        return direct_user_id
+
+    # A message forwarded to the owner's private chat can retain its original sender.
+    # Telegram omits this data when the sender has forwarding privacy enabled.
+    forward_origin = getattr(replied_message, "forward_origin", None)
+    forwarded_user_id = parse_chat_id(getattr(getattr(forward_origin, "sender_user", None), "id", None))
+    if forwarded_user_id is not None:
+        return forwarded_user_id
+
+    return parse_chat_id(getattr(getattr(replied_message, "forward_from", None), "id", None))
 
 
 def get_command_user_id(message, context: ContextTypes.DEFAULT_TYPE) -> int | None:
@@ -1199,7 +1210,7 @@ async def block_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     message = get_update_message(update)
     user_id = get_command_user_id(message, context)
     if user_id is None:
-        await reply_text(update, context, "User ke message par reply karke `/blockuser` likho, ya `/blockuser USER_ID` likho.", parse_mode="Markdown")
+        await reply_text(update, context, "Customer ka group message forward karke us forwarded message par `/blockuser` likho, ya `/blockuser USER_ID` likho.", parse_mode="Markdown")
         return
 
     owner_user_id = get_owner_user_id()
@@ -1210,7 +1221,7 @@ async def block_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     blocked_user_ids = load_blocked_user_ids()
     blocked_user_ids.add(user_id)
     save_blocked_user_ids(blocked_user_ids)
-    await reply_text(update, context, f"User `{user_id}` block ho gaya. Ab is user par bot koi action nahi karega.", parse_mode="Markdown")
+    logger.info("User blocked by owner user_id=%s", user_id)
 
 
 async def unblock_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1220,7 +1231,7 @@ async def unblock_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     message = get_update_message(update)
     user_id = get_command_user_id(message, context)
     if user_id is None:
-        await reply_text(update, context, "User ke message par reply karke `/unblockuser` likho, ya `/unblockuser USER_ID` likho.", parse_mode="Markdown")
+        await reply_text(update, context, "Customer ke forwarded/group message par reply karke `/unblockuser` likho, ya `/unblockuser USER_ID` likho.", parse_mode="Markdown")
         return
 
     blocked_user_ids = load_blocked_user_ids()
