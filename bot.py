@@ -2614,6 +2614,13 @@ async def handle_quick_action_callback(update: Update, context: ContextTypes.DEF
 
     action = str(getattr(query, "data", "") or "").strip()
 
+    async def remove_used_menu() -> None:
+        """Keep the chat clean once the customer has chosen a menu action."""
+        try:
+            await query.delete_message()
+        except Exception:
+            logger.exception("Could not delete used menu message")
+
     if action == QUICK_ACTION_MENU:
         await query.answer()
         await query.edit_message_text(
@@ -2625,31 +2632,37 @@ async def handle_quick_action_callback(update: Update, context: ContextTypes.DEF
     if action == QUICK_ACTION_RULES:
         await query.answer()
         await send_rules_book(update, context)
+        await remove_used_menu()
         return
 
     if action == QUICK_ACTION_CHART:
         await query.answer()
         await send_chart_image(update, context)
+        await remove_used_menu()
         return
 
     if action == QUICK_ACTION_QR:
         await query.answer()
         await send_next_qr(update, context)
+        await remove_used_menu()
         return
 
     if action == QUICK_ACTION_TOTAL:
         await query.answer()
         await send_game_total(update, context)
+        await remove_used_menu()
         return
 
     if action == QUICK_ACTION_GAME_OK:
         await query.answer()
         await send_game_ok_from_button(update, context)
+        await remove_used_menu()
         return
 
     if action == QUICK_ACTION_DS_OK:
         await query.answer()
         await send_ds_ok_from_button(update, context)
+        await remove_used_menu()
         return
 
     if action == QUICK_ACTION_ADVANCE:
@@ -2673,13 +2686,13 @@ async def handle_quick_action_callback(update: Update, context: ContextTypes.DEF
     if action == QUICK_ACTION_CASHBACK_95_5:
         await query.answer(text=ALERT_CASHBACK_95_5_TEXT, show_alert=True)
         await prompt_cashback_amount(update, context, "95_5")
-        await ensure_control_panel(update, context)
+        await remove_used_menu()
         return
 
     if action == QUICK_ACTION_CASHBACK_90_10:
         await query.answer(text=ALERT_CASHBACK_90_10_TEXT, show_alert=True)
         await prompt_cashback_amount(update, context, "90_10")
-        await ensure_control_panel(update, context)
+        await remove_used_menu()
         return
 
     if action == QUICK_ACTION_EXIT_MODE:
@@ -2687,12 +2700,13 @@ async def handle_quick_action_callback(update: Update, context: ContextTypes.DEF
         message = get_update_message(update)
         clear_cashback_mode(message)
         await reply_text(update, context, "Aap ab main mode me aa gaye ho. Ab jo button ya mode choose karoge, wahi system chalega.")
-        await ensure_control_panel(update, context)
+        await remove_used_menu()
         return
 
     if action == QUICK_ACTION_CASHBACK_WITHDRAW:
         await query.answer(text=ALERT_CASHBACK_WITHDRAW_TEXT, show_alert=True)
         await prompt_cashback_withdraw(update, context)
+        await remove_used_menu()
         return
 
     await query.answer()
