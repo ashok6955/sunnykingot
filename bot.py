@@ -1855,25 +1855,17 @@ def build_meetup_qr_keyboard() -> ReplyKeyboardMarkup:
 
 
 async def handle_meetup_qr_only_group(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle the Meetup group without letting the QR-only filter hide the game menu."""
+    """Keep the Meetup group QR-only, without menus or any other bot flows."""
     message = get_update_message(update)
     if parse_chat_id(getattr(message, "chat_id", None)) != MEETUP_QR_ONLY_GROUP_ID:
         return
 
     text = str(getattr(message, "text", "") or "").strip()
-    # Owner commands must bypass this QR-only group filter.
-    if text.lower().startswith(("/blockuser", "/unblockuser", "/setowner", "/myid", "myid", "my id")):
-        return
-
     if text and is_meetup_qr_request(text):
         await send_next_qr(update, context)
         raise ApplicationHandlerStop
 
-    # Let game messages continue to normal memory + menu handlers below.
-    if text and is_meetup_game_input(text):
-        return
-
-    # Ignore all other text in this special group.
+    # Never allow menus, rules, videos, approvals, or other replies in Meetup.
     raise ApplicationHandlerStop
 
 
