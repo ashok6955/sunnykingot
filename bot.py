@@ -30,10 +30,16 @@ APPROVAL_STATE_FILE = BASE_DIR / "approval_state.json"
 CASHBACK_MODE_FILE = BASE_DIR / "cashback_mode.json"
 CONTROL_PANEL_STATE_FILE = BASE_DIR / "control_panel_state.json"
 BLOCKED_USERS_FILE = BASE_DIR / "blocked_users.json"
+MEETUP_QR_SPAM_STATE_FILE = BASE_DIR / "meetup_qr_spam_state.json"
 SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 BOT_TIMEZONE = ZoneInfo("Asia/Kolkata")
 # Meetup Program: only number-only customer messages receive the next QR.
 MEETUP_QR_ONLY_GROUP_ID = -1004394636921
+MEETUP_QR_FREE_REQUESTS = 3
+MEETUP_QR_BURST_WINDOW = timedelta(minutes=10)
+MEETUP_QR_COOLDOWN = timedelta(seconds=60)
+MEETUP_QR_SPAM_ALERT_ATTEMPTS = 5
+MEETUP_QR_ALERT_COOLDOWN = timedelta(minutes=5)
 QUIET_HOURS_START = time(5, 1)
 QUIET_HOURS_END = time(6, 0)
 BUTTON_SESSION_GAP = timedelta(minutes=30)
@@ -278,6 +284,35 @@ def load_blocked_user_ids() -> set[int]:
 def save_blocked_user_ids(user_ids: set[int]) -> None:
     BLOCKED_USERS_FILE.write_text(
         json.dumps(sorted(user_ids), indent=2),
+        encoding="utf-8",
+    )
+
+
+def load_meetup_qr_spam_state() -> dict[str, dict[str, str | int | list[str]]]:
+    """Persist per-user Meetup QR request limits across restarts and deploys."""
+    if not MEETUP_QR_SPAM_STATE_FILE.exists():
+        return {}
+
+    try:
+        data = json.loads(MEETUP_QR_SPAM_STATE_FILE.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        logger.warning("Could not read Meetup QR spam state. Starting with empty state.")
+        return {}
+
+    if not isinstance(data, dict):
+        return {}
+
+    state: dict[str, dict[str, str | int | list[str]]] = {}
+    for key, value in data.items():
+        if not isinstance(key, str) or not isinstance(value, dict):
+            continue
+        state[key] = value
+    return state
+
+
+def save_meetup_qr_spam_state(state: dict[str, dict[str, str | int | list[str]]]) -> None:
+    MEETUP_QR_SPAM_STATE_FILE.write_text(
+        json.dumps(state, indent=2, sort_keys=True, ensure_ascii=False),
         encoding="utf-8",
     )
 
@@ -1849,6 +1884,70 @@ def is_meetup_qr_request(text: str) -> bool:
     ))
 
 
+def build_meetup_qr_spam_key(message) -> str | None:
+    user_id = parse_chat_id(getattr(getattr(message, "from_user", None), "id", None))
+    if user_id is None:
+        return None
+    return f"{MEETUP_QR_ONLY_GROUP_ID}:{user_id}"
+
+
+async def allow_meetup_qr_request(message, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    """Allow three quick QR requests, then rate-limit only that customer."""
+    state_key = build_meetup_qr_spam_key(message)
+    if state_key is None:
+        return False
+
+    now = datetime.now(BOT_TIMEZONE)
+    state = load_meetup_qr_spam_state()
+    entry = state.get(state_key, {})
+    request_times = [
+        parsed.isoformat()
+        for value in entry.get("request_times", []) if isinstance(entry.get("request_times"), list)
+        if (parsed := parse_iso_datetime(str(value))) is not None and now - parsed <= MEETUP_QR_BURST_WINDOW
+    ]
+    request_datetimes = [parse_iso_datetime(value) for value in request_times]
+    request_datetimes = [value for value in request_datetimes if value is not None]
+    last_sent_at = parse_iso_datetime(str(entry.get("last_sent_at", "") or ""))
+
+    if len(request_datetimes) >= MEETUP_QR_FREE_REQUESTS and last_sent_at is not None:
+        remaining = MEETUP_QR_COOLDOWN - (now - last_sent_at)
+        if remaining.total_seconds() > 0:
+            blocked_attempts = int(entry.get("blocked_attempts", 0) or 0) + 1
+            entry["blocked_attempts"] = blocked_attempts
+            last_alert_at = parse_iso_datetime(str(entry.get("last_alert_at", "") or ""))
+            should_alert_owner = (
+                blocked_attempts >= MEETUP_QR_SPAM_ALERT_ATTEMPTS
+                and (last_alert_at is None or now - last_alert_at >= MEETUP_QR_ALERT_COOLDOWN)
+            )
+            if should_alert_owner:
+                owner_user_id = get_owner_user_id()
+                if owner_user_id is not None:
+                    user = getattr(message, "from_user", None)
+                    await send_with_retry(
+                        context.bot.send_message,
+                        chat_id=owner_user_id,
+                        text=(
+                            "QR Spam Alert\n"
+                            f"User: {build_user_label(user)}\n"
+                            f"User ID: {getattr(user, 'id', 'unknown')}\n"
+                            f"Group: {getattr(getattr(message, 'chat', None), 'title', 'Meetup Program')}"
+                        ),
+                    )
+                    entry["last_alert_at"] = now.isoformat()
+
+            state[state_key] = entry
+            save_meetup_qr_spam_state(state)
+            return False
+
+    request_times.append(now.isoformat())
+    entry["request_times"] = request_times[-20:]
+    entry["last_sent_at"] = now.isoformat()
+    entry["blocked_attempts"] = 0
+    state[state_key] = entry
+    save_meetup_qr_spam_state(state)
+    return True
+
+
 def build_meetup_qr_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         [["QR lene ke liye dabaye"]],
@@ -1866,7 +1965,8 @@ async def handle_meetup_qr_only_group(update: Update, context: ContextTypes.DEFA
 
     text = str(getattr(message, "text", "") or "").strip()
     if text and is_meetup_qr_request(text):
-        await send_next_qr(update, context)
+        if await allow_meetup_qr_request(message, context):
+            await send_next_qr(update, context)
         raise ApplicationHandlerStop
 
     # Never allow menus, rules, videos, approvals, or other replies in Meetup.
@@ -2682,6 +2782,10 @@ async def handle_quick_action_callback(update: Update, context: ContextTypes.DEF
     if query is None:
         return
 
+    if is_blocked_user(getattr(getattr(query, "from_user", None), "id", None)):
+        await query.answer("Aapke liye bot access band hai.", show_alert=True)
+        return
+
     action = str(getattr(query, "data", "") or "").strip()
 
     async def remove_used_menu() -> None:
@@ -2991,7 +3095,7 @@ def main() -> None:
     application.add_handler(TypeHandler(Update, log_incoming_update), group=-1)
     application.add_handler(CommandHandler("blockuser", block_user), group=0)
     application.add_handler(CommandHandler("unblockuser", unblock_user), group=0)
-    application.add_handler(MessageHandler(BLOCKED_USER_FILTER & ~filters.COMMAND, stop_blocked_user_actions), group=0)
+    application.add_handler(MessageHandler(BLOCKED_USER_FILTER, stop_blocked_user_actions), group=0)
     application.add_handler(CallbackQueryHandler(handle_quick_action_callback, pattern=r"^quick:"))
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("myid", send_my_id))
