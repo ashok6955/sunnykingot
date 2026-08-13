@@ -60,6 +60,7 @@ QUICK_ACTION_CASHBACK_95_5 = "quick:cashback_95_5"
 QUICK_ACTION_CASHBACK_90_10 = "quick:cashback_90_10"
 QUICK_ACTION_EXIT_MODE = "quick:exit_mode"
 QUICK_ACTION_CASHBACK_WITHDRAW = "quick:cashback_withdraw"
+QUICK_ACTION_MENU = "quick:menu"
 ALERT_CASHBACK_95_5_TEXT = "Cashback mode activate kar diya gaya hai.\nAb aap 95/5 mode me ho."
 ALERT_CASHBACK_90_10_TEXT = "Cashback mode activate kar diya gaya hai.\nAb aap 90/10 mode me ho."
 ALERT_EXIT_MAIN_MODE_TEXT = "Main mode activate kar diya gaya hai.\nAb jo button choose karoge, wahi mode chalega."
@@ -1234,6 +1235,13 @@ def build_game_quick_actions_markup(message) -> InlineKeyboardMarkup:
     ])
 
 
+def build_menu_button_markup() -> InlineKeyboardMarkup:
+    """Use an inline button because it works reliably in Telegram group clients."""
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("Menu ke liye dabaye", callback_data=QUICK_ACTION_MENU)],
+    ])
+
+
 def build_main_menu_keyboard() -> ReplyKeyboardMarkup:
     """Keep common actions in Telegram's bottom keyboard instead of cluttering chat history."""
     return ReplyKeyboardMarkup(
@@ -1304,11 +1312,14 @@ async def ensure_control_panel(update: Update, context: ContextTypes.DEFAULT_TYP
         logger.info("CONTROL_PANEL skipped configured target group chat_id=%s", getattr(message, "chat_id", None))
         return
 
+    if not should_show_quick_actions(message):
+        return
+
     await send_with_retry(
         context.bot.send_message,
         chat_id=message.chat_id,
-        text=build_control_panel_text(message),
-        reply_markup=build_main_menu_keyboard(),
+        text="Menu",
+        reply_markup=build_menu_button_markup(),
         **get_business_kwargs(update),
     )
     mark_quick_actions_sent(message)
@@ -2598,6 +2609,14 @@ async def handle_quick_action_callback(update: Update, context: ContextTypes.DEF
         return
 
     action = str(getattr(query, "data", "") or "").strip()
+
+    if action == QUICK_ACTION_MENU:
+        await query.answer()
+        await query.edit_message_text(
+            text="Menu options:",
+            reply_markup=build_game_quick_actions_markup(get_update_message(update)),
+        )
+        return
 
     if action == QUICK_ACTION_RULES:
         await query.answer()
