@@ -690,6 +690,13 @@ def parse_chat_id(value: str | int | None) -> int | None:
         return None
 
 
+def is_meetup_qr_only_chat(chat_id: int | str | None) -> bool:
+    """The Meetup group must never receive the normal menu or customer flows."""
+    settings = load_settings()
+    configured_group_id = parse_chat_id(settings.get("meetup_qr_only_group_id"))
+    return parse_chat_id(chat_id) == (configured_group_id or MEETUP_QR_ONLY_GROUP_ID)
+
+
 def get_target_group_id() -> int | None:
     settings = load_settings()
     if "target_group_id" in settings:
@@ -1487,7 +1494,7 @@ def build_advanced_quick_actions_markup(message) -> InlineKeyboardMarkup:
 
 async def send_welcome_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message = get_update_message(update)
-    if is_configured_target_group(getattr(message, "chat_id", None)):
+    if is_configured_target_group(getattr(message, "chat_id", None)) or is_meetup_qr_only_chat(getattr(message, "chat_id", None)):
         logger.info("WELCOME_VIDEO skipped configured target group chat_id=%s", message.chat_id)
         return
 
@@ -1511,7 +1518,7 @@ async def send_welcome_video(update: Update, context: ContextTypes.DEFAULT_TYPE)
 async def send_rules_book(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Send the complete rules book followed by its attached welcome video."""
     message = get_update_message(update)
-    if is_configured_target_group(getattr(message, "chat_id", None)):
+    if is_configured_target_group(getattr(message, "chat_id", None)) or is_meetup_qr_only_chat(getattr(message, "chat_id", None)):
         return
 
     await reply_text(update, context, WELCOME_CONTROL_PANEL_TEXT)
@@ -1520,6 +1527,10 @@ async def send_rules_book(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 async def ensure_control_panel(update: Update, context: ContextTypes.DEFAULT_TYPE, *, force: bool = False) -> None:
     message = get_update_message(update)
+    if is_meetup_qr_only_chat(getattr(message, "chat_id", None)):
+        logger.info("CONTROL_PANEL skipped Meetup QR-only chat_id=%s", getattr(message, "chat_id", None))
+        return
+
     if is_configured_target_group(getattr(message, "chat_id", None)):
         logger.info("CONTROL_PANEL skipped configured target group chat_id=%s", getattr(message, "chat_id", None))
         return
@@ -2041,7 +2052,7 @@ async def allow_meetup_qr_request(message, context: ContextTypes.DEFAULT_TYPE, *
 async def handle_meetup_qr_only_group(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Keep the Meetup group QR-only, without menus or any other bot flows."""
     message = get_update_message(update)
-    if parse_chat_id(getattr(message, "chat_id", None)) != MEETUP_QR_ONLY_GROUP_ID:
+    if not is_meetup_qr_only_chat(getattr(message, "chat_id", None)):
         return
 
     text = str(getattr(message, "text", "") or "").strip()
@@ -2898,7 +2909,7 @@ async def handle_quick_action_callback(update: Update, context: ContextTypes.DEF
         return
 
     callback_message = getattr(query, "message", None)
-    if parse_chat_id(getattr(callback_message, "chat_id", None)) == MEETUP_QR_ONLY_GROUP_ID:
+    if is_meetup_qr_only_chat(getattr(callback_message, "chat_id", None)):
         # Old inline menus can remain in chat after a deploy. Meetup accepts QR only.
         if str(getattr(query, "data", "") or "") == QUICK_ACTION_QR:
             await query.answer()
