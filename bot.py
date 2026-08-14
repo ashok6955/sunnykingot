@@ -2087,7 +2087,7 @@ async def handle_meetup_qr_only_group(update: Update, context: ContextTypes.DEFA
             await show_meetup_qr_keyboard(update, context)
         raise ApplicationHandlerStop
 
-    if text and re.search(r"\d", text):
+    if text and looks_like_game_message(text):
         await show_meetup_qr_keyboard(update, context)
         raise ApplicationHandlerStop
 
