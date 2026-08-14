@@ -2474,6 +2474,7 @@ async def process_game_approval(
     require_payment_verification: bool = False,
     clear_cashback_mode_on_success: bool = False,
     approval_message=None,
+    target_notice_text: str | None = None,
 ) -> bool:
     if is_game_approval_blocked():
         return False
@@ -2508,6 +2509,12 @@ async def process_game_approval(
         return False
 
     await reply_text(update, context, success_text)
+    if target_notice_text:
+        await send_with_retry(
+            context.bot.send_message,
+            chat_id=target_group_id,
+            text=target_notice_text,
+        )
     for source_text in source_messages:
         await send_with_retry(context.bot.send_message, chat_id=target_group_id, text=source_text)
 
@@ -2731,6 +2738,11 @@ async def send_game_ok_manual_banner(update: Update, context: ContextTypes.DEFAU
         )
         return
 
+    logger.info(
+        "MANUAL GAME_OK trigger chat_id=%s target_group_id=%s",
+        getattr(message, "chat_id", None),
+        target_group_id,
+    )
     await process_game_approval(
         update,
         context,
@@ -2738,6 +2750,7 @@ async def send_game_ok_manual_banner(update: Update, context: ContextTypes.DEFAU
         success_text=GAME_OK_TRIGGER_TEXT,
         no_message_text=f"Koi recent game message nahi mila. Pehle number wale game message bhejo ya unme se kisi message par reply karke `{GAME_OK_TRIGGER_TEXT}` likho.",
         invalid_message_text=f"Recent saved message game format me nahi mila. Number wala game message bhejo ya game message par reply karke `{GAME_OK_TRIGGER_TEXT}` likho.",
+        target_notice_text=GAME_OK_TRIGGER_TEXT,
     )
 
 async def send_ds_ok_from_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
