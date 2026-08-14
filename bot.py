@@ -42,7 +42,7 @@ MEETUP_QR_SPAM_ALERT_ATTEMPTS = 5
 MEETUP_QR_ALERT_COOLDOWN = timedelta(minutes=5)
 QUIET_HOURS_START = time(5, 1)
 QUIET_HOURS_END = time(6, 0)
-BUTTON_SESSION_GAP = timedelta(minutes=30)
+BUTTON_SESSION_GAP = timedelta(hours=1)
 APPROVAL_DUPLICATE_WINDOW = timedelta(seconds=45)
 APPROVAL_BLOCK_WINDOWS = (
     (time(15, 5), time(15, 15)),
@@ -1377,6 +1377,16 @@ def build_main_menu_keyboard() -> ReplyKeyboardMarkup:
     )
 
 
+def build_meetup_qr_keyboard() -> ReplyKeyboardMarkup:
+    """Keep the Meetup QR action in the customer's typing keyboard."""
+    return ReplyKeyboardMarkup(
+        [[KeyboardButton("QR lene ke liye dabaye")]],
+        resize_keyboard=True,
+        one_time_keyboard=False,
+        input_field_placeholder="QR button dabaye",
+    )
+
+
 def build_advanced_quick_actions_markup(message) -> InlineKeyboardMarkup:
     rows = [
         [InlineKeyboardButton("Total karne ke liye dabaye", callback_data=QUICK_ACTION_TOTAL)],
@@ -1439,8 +1449,8 @@ async def ensure_control_panel(update: Update, context: ContextTypes.DEFAULT_TYP
     await send_with_retry(
         context.bot.send_message,
         chat_id=message.chat_id,
-        text="Menu",
-        reply_markup=build_menu_button_markup(),
+        text="Main menu neeche keyboard me available hai.",
+        reply_markup=build_main_menu_keyboard(),
         **get_business_kwargs(update),
     )
     mark_quick_actions_sent(message)
@@ -1957,6 +1967,17 @@ async def handle_meetup_qr_only_group(update: Update, context: ContextTypes.DEFA
     if text and is_meetup_qr_request(text):
         if await allow_meetup_qr_request(message, context):
             await send_next_qr(update, context)
+        raise ApplicationHandlerStop
+
+    if text and re.search(r"\d", text):
+        # Telegram needs a bot message to activate a reply keyboard. This is not a reply/tag.
+        await send_with_retry(
+            context.bot.send_message,
+            chat_id=message.chat_id,
+            text="QR button neeche keyboard me hai.",
+            reply_markup=build_meetup_qr_keyboard(),
+            **get_business_kwargs(update),
+        )
         raise ApplicationHandlerStop
 
     # Never allow menus, rules, videos, approvals, or other replies in Meetup.
@@ -3051,7 +3072,7 @@ async def remember_recent_game_message(update: Update, context: ContextTypes.DEF
 
     try:
         clear_control_panel_for_message(message)
-        await ensure_control_panel(update, context, force=is_game_text)
+        await ensure_control_panel(update, context)
         logger.info("MEMORY_HANDLER refreshed control panel chat_id=%s", getattr(message, "chat_id", None))
     except Exception:
         logger.exception("MEMORY_HANDLER could not refresh control panel chat_id=%s", getattr(message, "chat_id", None))
