@@ -3072,7 +3072,8 @@ async def remember_recent_game_message(update: Update, context: ContextTypes.DEF
 
     try:
         clear_control_panel_for_message(message)
-        await ensure_control_panel(update, context)
+        # A new number/game should immediately make the main typing keyboard available.
+        await ensure_control_panel(update, context, force=is_game_text)
         logger.info("MEMORY_HANDLER refreshed control panel chat_id=%s", getattr(message, "chat_id", None))
     except Exception:
         logger.exception("MEMORY_HANDLER could not refresh control panel chat_id=%s", getattr(message, "chat_id", None))
