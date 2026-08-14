@@ -2049,6 +2049,27 @@ async def allow_meetup_qr_request(message, context: ContextTypes.DEFAULT_TYPE, *
     return True
 
 
+async def show_meetup_qr_keyboard(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Open only the QR reply keyboard, without leaving a visible bot message in Meetup."""
+    message = get_update_message(update)
+    sent_control = await send_with_retry(
+        context.bot.send_message,
+        chat_id=message.chat_id,
+        text="\u200b",
+        reply_markup=build_meetup_qr_keyboard(),
+        **get_business_kwargs(update),
+    )
+    context.application.create_task(
+        delete_bot_message_after_delay(
+            context.bot,
+            message.chat_id,
+            sent_control.message_id,
+            1,
+        ),
+        update=update,
+    )
+
+
 async def handle_meetup_qr_only_group(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Keep the Meetup group QR-only, without menus or any other bot flows."""
     message = get_update_message(update)
@@ -2063,26 +2084,11 @@ async def handle_meetup_qr_only_group(update: Update, context: ContextTypes.DEFA
         )
         if await allow_meetup_qr_request(message, context):
             await send_next_qr(update, context)
+            await show_meetup_qr_keyboard(update, context)
         raise ApplicationHandlerStop
 
     if text and re.search(r"\d", text):
-        # Telegram requires a message to activate a reply keyboard; remove the invisible helper immediately.
-        sent_control = await send_with_retry(
-            context.bot.send_message,
-            chat_id=message.chat_id,
-            text="\u200b",
-            reply_markup=build_meetup_qr_keyboard(),
-            **get_business_kwargs(update),
-        )
-        context.application.create_task(
-            delete_bot_message_after_delay(
-                context.bot,
-                message.chat_id,
-                sent_control.message_id,
-                1,
-            ),
-            update=update,
-        )
+        await show_meetup_qr_keyboard(update, context)
         raise ApplicationHandlerStop
 
     # Never allow menus, rules, videos, approvals, or other replies in Meetup.
