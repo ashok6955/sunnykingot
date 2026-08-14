@@ -2492,6 +2492,7 @@ async def process_game_approval(
     clear_cashback_mode_on_success: bool = False,
     approval_message=None,
     target_notice_text: str | None = None,
+    silent_when_no_source: bool = False,
 ) -> bool:
     if is_game_approval_blocked():
         return False
@@ -2508,7 +2509,8 @@ async def process_game_approval(
             source_messages = [text for text in source_messages if text.strip()]
 
     if not source_messages:
-        await reply_text(update, context, no_message_text, parse_mode="Markdown")
+        if not silent_when_no_source:
+            await reply_text(update, context, no_message_text, parse_mode="Markdown")
         return False
 
     invalid_messages = [text for text in source_messages if not looks_like_game_message(text)]
@@ -2634,6 +2636,7 @@ async def send_game_ok_verified(update: Update, context: ContextTypes.DEFAULT_TY
         no_message_text=f"Koi recent game message nahi mila. Pehle number wale game message bhejo ya unme se kisi message par reply karke `{GAME_OK_TRIGGER_TEXT}` likho.",
         invalid_message_text=f"Recent saved message game format me nahi mila. Number wala game message bhejo ya game message par reply karke `{GAME_OK_TRIGGER_TEXT}` likho.",
         require_payment_verification=True,
+        silent_when_no_source=True,
     )
 
 
@@ -2710,6 +2713,7 @@ async def send_game_ok_from_button(update: Update, context: ContextTypes.DEFAULT
         no_message_text=f"Koi recent game message nahi mila. Pehle number wale game message bhejo ya unme se kisi message par reply karke `{GAME_OK_TRIGGER_TEXT}` likho.",
         invalid_message_text=f"Recent saved message game format me nahi mila. Number wala game message bhejo ya game message par reply karke `{GAME_OK_TRIGGER_TEXT}` likho.",
         approval_message=callback_message,
+        silent_when_no_source=True,
     )
 
 async def handle_game_ok_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -2768,6 +2772,7 @@ async def send_game_ok_manual_banner(update: Update, context: ContextTypes.DEFAU
         no_message_text=f"Koi recent game message nahi mila. Pehle number wale game message bhejo ya unme se kisi message par reply karke `{GAME_OK_TRIGGER_TEXT}` likho.",
         invalid_message_text=f"Recent saved message game format me nahi mila. Number wala game message bhejo ya game message par reply karke `{GAME_OK_TRIGGER_TEXT}` likho.",
         target_notice_text=GAME_OK_TRIGGER_TEXT,
+        silent_when_no_source=True,
     )
 
 async def send_ds_ok_from_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
@@ -2794,6 +2799,7 @@ async def send_ds_ok_from_button(update: Update, context: ContextTypes.DEFAULT_T
         invalid_message_text=f"Recent saved message game format me nahi mila. Number wala game message bhejo ya game message par reply karke `{GAME_OK_TRIGGER_TEXT}` likho.",
         require_payment_verification=True,
         approval_message=callback_message,
+        silent_when_no_source=True,
     )
     return
 
@@ -2857,6 +2863,7 @@ async def send_ds_ok_banner(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         success_text="DISAWAR GAME OK \u2714",
         no_message_text="Koi recent game message nahi mila. Pehle number wale game message bhejo ya unme se kisi message par reply karke `ds ok` likho.",
         invalid_message_text="Recent saved message game format me nahi mila. Number wala game message bhejo ya game message par reply karke `ds ok` likho.",
+        silent_when_no_source=True,
     )
 
 
