@@ -42,7 +42,7 @@ MEETUP_QR_SPAM_ALERT_ATTEMPTS = 5
 MEETUP_QR_ALERT_COOLDOWN = timedelta(minutes=5)
 QUIET_HOURS_START = time(5, 1)
 QUIET_HOURS_END = time(6, 0)
-BUTTON_SESSION_GAP = timedelta(hours=1)
+BUTTON_SESSION_GAP = timedelta(minutes=30)
 APPROVAL_DUPLICATE_WINDOW = timedelta(seconds=45)
 APPROVAL_BLOCK_WINDOWS = (
     (time(15, 5), time(15, 15)),
