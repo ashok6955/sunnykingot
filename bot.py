@@ -1449,8 +1449,8 @@ async def ensure_control_panel(update: Update, context: ContextTypes.DEFAULT_TYP
     await send_with_retry(
         context.bot.send_message,
         chat_id=message.chat_id,
-        text="Main menu neeche keyboard me available hai.",
-        reply_markup=build_main_menu_keyboard(),
+        text="Menu",
+        reply_markup=build_menu_button_markup(),
         **get_business_kwargs(update),
     )
     mark_quick_actions_sent(message)
