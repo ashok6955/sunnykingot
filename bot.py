@@ -1543,6 +1543,7 @@ async def ensure_control_panel(update: Update, context: ContextTypes.DEFAULT_TYP
         chat_id=message.chat_id,
         text="Menu",
         reply_markup=build_menu_button_markup(),
+        reply_to_message_id=message.message_id,
         **get_business_kwargs(update),
     )
     mark_quick_actions_sent(message)
