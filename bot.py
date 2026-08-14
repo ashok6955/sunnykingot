@@ -31,6 +31,7 @@ CASHBACK_MODE_FILE = BASE_DIR / "cashback_mode.json"
 CONTROL_PANEL_STATE_FILE = BASE_DIR / "control_panel_state.json"
 BLOCKED_USERS_FILE = BASE_DIR / "blocked_users.json"
 MEETUP_QR_SPAM_STATE_FILE = BASE_DIR / "meetup_qr_spam_state.json"
+MEETUP_QR_CONTROL_STATE_FILE = BASE_DIR / "meetup_qr_control_state.json"
 SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 BOT_TIMEZONE = ZoneInfo("Asia/Kolkata")
 # Meetup Program: only number-only customer messages receive the next QR.
@@ -40,6 +41,7 @@ MEETUP_QR_BURST_WINDOW = timedelta(minutes=10)
 MEETUP_QR_COOLDOWN = timedelta(seconds=60)
 MEETUP_QR_SPAM_ALERT_ATTEMPTS = 5
 MEETUP_QR_ALERT_COOLDOWN = timedelta(minutes=5)
+MEETUP_QR_CONTROL_DELETE_DELAY_SECONDS = 60
 QUIET_HOURS_START = time(5, 1)
 QUIET_HOURS_END = time(6, 0)
 BUTTON_SESSION_GAP = timedelta(minutes=30)
@@ -315,6 +317,76 @@ def save_meetup_qr_spam_state(state: dict[str, dict[str, str | int | list[str]]]
         json.dumps(state, indent=2, sort_keys=True, ensure_ascii=False),
         encoding="utf-8",
     )
+
+
+def build_meetup_qr_control_key(message) -> str | None:
+    user_id = parse_chat_id(getattr(getattr(message, "from_user", None), "id", None))
+    if user_id is None:
+        return None
+    return f"{MEETUP_QR_ONLY_GROUP_ID}:{user_id}"
+
+
+def load_meetup_qr_control_state() -> dict[str, list[int]]:
+    if not MEETUP_QR_CONTROL_STATE_FILE.exists():
+        return {}
+
+    try:
+        data = json.loads(MEETUP_QR_CONTROL_STATE_FILE.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        logger.warning("Could not read Meetup QR control state. Starting with empty state.")
+        return {}
+
+    if not isinstance(data, dict):
+        return {}
+
+    state: dict[str, list[int]] = {}
+    for key, value in data.items():
+        if not isinstance(key, str) or not isinstance(value, list):
+            continue
+        message_ids = [message_id for item in value if (message_id := parse_chat_id(item)) is not None]
+        if message_ids:
+            state[key] = message_ids[-20:]
+    return state
+
+
+def save_meetup_qr_control_state(state: dict[str, list[int]]) -> None:
+    MEETUP_QR_CONTROL_STATE_FILE.write_text(
+        json.dumps(state, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+
+
+def remember_meetup_qr_control_message(message, sent_message) -> None:
+    state_key = build_meetup_qr_control_key(message)
+    message_id = parse_chat_id(getattr(sent_message, "message_id", None))
+    if state_key is None or message_id is None:
+        return
+
+    state = load_meetup_qr_control_state()
+    state[state_key] = [*state.get(state_key, []), message_id][-20:]
+    save_meetup_qr_control_state(state)
+
+
+async def delete_meetup_qr_controls_after_delay(context: ContextTypes.DEFAULT_TYPE, message) -> None:
+    """Remove QR keyboard prompts after the customer has used the QR action."""
+    state_key = build_meetup_qr_control_key(message)
+    if state_key is None:
+        return
+
+    await asyncio.sleep(MEETUP_QR_CONTROL_DELETE_DELAY_SECONDS)
+    state = load_meetup_qr_control_state()
+    message_ids = state.pop(state_key, [])
+    save_meetup_qr_control_state(state)
+
+    for message_id in message_ids:
+        try:
+            await send_with_retry(
+                context.bot.delete_message,
+                chat_id=MEETUP_QR_ONLY_GROUP_ID,
+                message_id=message_id,
+            )
+        except Exception:
+            logger.exception("Could not delete Meetup QR control message_id=%s", message_id)
 
 
 def is_blocked_user(user_id: int | str | None) -> bool:
@@ -1965,19 +2037,24 @@ async def handle_meetup_qr_only_group(update: Update, context: ContextTypes.DEFA
 
     text = str(getattr(message, "text", "") or "").strip()
     if text and is_meetup_qr_request(text):
+        context.application.create_task(
+            delete_meetup_qr_controls_after_delay(context, message),
+            update=update,
+        )
         if await allow_meetup_qr_request(message, context):
             await send_next_qr(update, context)
         raise ApplicationHandlerStop
 
     if text and re.search(r"\d", text):
         # Telegram needs a bot message to activate a reply keyboard. This is not a reply/tag.
-        await send_with_retry(
+        sent_control = await send_with_retry(
             context.bot.send_message,
             chat_id=message.chat_id,
             text="QR button neeche keyboard me hai.",
             reply_markup=build_meetup_qr_keyboard(),
             **get_business_kwargs(update),
         )
+        remember_meetup_qr_control_message(message, sent_control)
         raise ApplicationHandlerStop
 
     # Never allow menus, rules, videos, approvals, or other replies in Meetup.

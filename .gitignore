@@ -2,3 +2,4 @@ __pycache__/
 *.py[cod]
 .env
 state.json
+meetup_qr_control_state.json
