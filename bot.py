@@ -389,6 +389,15 @@ async def delete_meetup_qr_controls_after_delay(context: ContextTypes.DEFAULT_TY
             logger.exception("Could not delete Meetup QR control message_id=%s", message_id)
 
 
+async def delete_bot_message_after_delay(bot, chat_id: int, message_id: int, delay_seconds: float) -> None:
+    """Remove the temporary message used only to make Telegram show a reply keyboard."""
+    await asyncio.sleep(delay_seconds)
+    try:
+        await send_with_retry(bot.delete_message, chat_id=chat_id, message_id=message_id)
+    except Exception:
+        logger.exception("Could not delete temporary keyboard message_id=%s", message_id)
+
+
 def is_blocked_user(user_id: int | str | None) -> bool:
     parsed_user_id = parse_chat_id(user_id)
     return parsed_user_id is not None and parsed_user_id in load_blocked_user_ids()
@@ -2046,15 +2055,23 @@ async def handle_meetup_qr_only_group(update: Update, context: ContextTypes.DEFA
         raise ApplicationHandlerStop
 
     if text and re.search(r"\d", text):
-        # Telegram needs a bot message to activate a reply keyboard. This is not a reply/tag.
+        # Telegram requires a message to activate a reply keyboard; remove the invisible helper immediately.
         sent_control = await send_with_retry(
             context.bot.send_message,
             chat_id=message.chat_id,
-            text="QR button neeche keyboard me hai.",
+            text="\u200b",
             reply_markup=build_meetup_qr_keyboard(),
             **get_business_kwargs(update),
         )
-        remember_meetup_qr_control_message(message, sent_control)
+        context.application.create_task(
+            delete_bot_message_after_delay(
+                context.bot,
+                message.chat_id,
+                sent_control.message_id,
+                1,
+            ),
+            update=update,
+        )
         raise ApplicationHandlerStop
 
     # Never allow menus, rules, videos, approvals, or other replies in Meetup.
@@ -2456,11 +2473,12 @@ async def process_game_approval(
     invalid_message_text: str,
     require_payment_verification: bool = False,
     clear_cashback_mode_on_success: bool = False,
+    approval_message=None,
 ) -> bool:
     if is_game_approval_blocked():
         return False
 
-    message = get_update_message(update)
+    message = approval_message or get_update_message(update)
     source_messages, used_reply_message, reply_message_id = collect_game_source_messages(message)
     source_messages = [text for text in source_messages if text.strip()]
 
@@ -2648,10 +2666,7 @@ async def send_game_ok_from_button(update: Update, context: ContextTypes.DEFAULT
     if is_quiet_hours() or is_game_approval_blocked():
         return False
 
-    message = get_update_message(update)
     callback_message = getattr(getattr(update, "callback_query", None), "message", None)
-    if callback_message is not None:
-        message = callback_message
     target_group_id = get_game_target_group_id()
     if target_group_id is None:
         await reply_text(
@@ -2662,7 +2677,7 @@ async def send_game_ok_from_button(update: Update, context: ContextTypes.DEFAULT
         )
         return False
 
-    success_text = get_cashback_success_text_for_message(message) or GAME_OK_SUCCESS_TEXT
+    success_text = get_cashback_success_text_for_message(callback_message) or GAME_OK_SUCCESS_TEXT
     return await process_game_approval(
         update,
         context,
@@ -2670,6 +2685,7 @@ async def send_game_ok_from_button(update: Update, context: ContextTypes.DEFAULT
         success_text=success_text,
         no_message_text=f"Koi recent game message nahi mila. Pehle number wale game message bhejo ya unme se kisi message par reply karke `{GAME_OK_TRIGGER_TEXT}` likho.",
         invalid_message_text=f"Recent saved message game format me nahi mila. Number wala game message bhejo ya game message par reply karke `{GAME_OK_TRIGGER_TEXT}` likho.",
+        approval_message=callback_message,
     )
 
 async def handle_game_ok_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -2728,10 +2744,7 @@ async def send_ds_ok_from_button(update: Update, context: ContextTypes.DEFAULT_T
     if is_quiet_hours() or is_game_approval_blocked():
         return False
 
-    message = get_update_message(update)
     callback_message = getattr(getattr(update, "callback_query", None), "message", None)
-    if callback_message is not None:
-        message = callback_message
     target_group_id = get_target_group_id()
     if target_group_id is None:
         await reply_text(
@@ -2746,10 +2759,11 @@ async def send_ds_ok_from_button(update: Update, context: ContextTypes.DEFAULT_T
         update,
         context,
         target_group_id=target_group_id,
-        success_text=GAME_OK_SUCCESS_TEXT,
+        success_text="DISAWAR GAME OK \u2714",
         no_message_text=f"Koi recent game message nahi mila. Pehle number wale game message bhejo ya unme se kisi message par reply karke `{GAME_OK_TRIGGER_TEXT}` likho.",
         invalid_message_text=f"Recent saved message game format me nahi mila. Number wala game message bhejo ya game message par reply karke `{GAME_OK_TRIGGER_TEXT}` likho.",
         require_payment_verification=True,
+        approval_message=callback_message,
     )
     return
 
@@ -2810,7 +2824,7 @@ async def send_ds_ok_banner(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         update,
         context,
         target_group_id=target_group_id,
-        success_text=GAME_OK_SUCCESS_TEXT,
+        success_text="DISAWAR GAME OK \u2714",
         no_message_text="Koi recent game message nahi mila. Pehle number wale game message bhejo ya unme se kisi message par reply karke `ds ok` likho.",
         invalid_message_text="Recent saved message game format me nahi mila. Number wala game message bhejo ya game message par reply karke `ds ok` likho.",
     )
@@ -2926,6 +2940,7 @@ async def handle_quick_action_callback(update: Update, context: ContextTypes.DEF
         return
 
     if action == QUICK_ACTION_GAME_OK:
+        logger.info("MENU GAME_OK clicked chat_id=%s", getattr(getattr(query, "message", None), "chat_id", None))
         await query.answer()
         approval_completed = await send_game_ok_from_button(update, context)
         if approval_completed:
@@ -2933,6 +2948,7 @@ async def handle_quick_action_callback(update: Update, context: ContextTypes.DEF
         return
 
     if action == QUICK_ACTION_DS_OK:
+        logger.info("MENU DS_OK clicked chat_id=%s", getattr(getattr(query, "message", None), "chat_id", None))
         await query.answer()
         approval_completed = await send_ds_ok_from_button(update, context)
         if approval_completed:
@@ -2949,12 +2965,16 @@ async def handle_quick_action_callback(update: Update, context: ContextTypes.DEF
         return
 
     if action == QUICK_ACTION_MAIN_BUTTONS:
-        message = get_update_message(update)
         await query.answer()
         await query.edit_message_text(
-            text="Main menu neeche keyboard me available hai.",
+            text="Main menu neeche keyboard me khul gaya hai.",
         )
-        await ensure_control_panel(update, context)
+        await reply_text(
+            update,
+            context,
+            "Apna option neeche keyboard se choose karein.",
+            reply_markup=build_main_menu_keyboard(),
+        )
         return
 
     if action == QUICK_ACTION_CASHBACK_95_5:
