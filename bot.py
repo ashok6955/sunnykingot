@@ -9,7 +9,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import httpx
-from telegram import CallbackQuery, ChatPermissions, ForceReply, InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup, ReplyParameters, Update
+from telegram import CallbackQuery, ChatPermissions, ForceReply, InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup, Update
 from telegram.error import TimedOut
 from telegram.ext import Application, ApplicationHandlerStop, CallbackQueryHandler, CommandHandler, ContextTypes, MessageHandler, TypeHandler, filters
 
@@ -71,7 +71,6 @@ ALERT_CASHBACK_95_5_TEXT = "Cashback mode activate kar diya gaya hai.\nAb aap 95
 ALERT_CASHBACK_90_10_TEXT = "Cashback mode activate kar diya gaya hai.\nAb aap 90/10 mode me ho."
 ALERT_EXIT_MAIN_MODE_TEXT = "Main mode activate kar diya gaya hai.\nAb jo button choose karoge, wahi mode chalega."
 ALERT_CASHBACK_WITHDRAW_TEXT = "Apne total game ka amount dalo.\nYa `cashback total` likhkar auto total nikaalo."
-MEETUP_QR_BUTTON_TEXT = "QR \u0932\u0947\u0928\u0947 \u0915\u0947 \u0932\u093f\u090f \u0926\u092c\u093e\u090f\u0901"
 HAPPY_HOURS_TEXT = (
     "\U0001F916 TELEGRAM HAPPY HOURS BETA\n"
     "\U0001F4B8 10\u00D71000 FULL RATE\n\n"
@@ -1875,11 +1874,6 @@ async def send_next_qr(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     await reply_photo(update, context, image_bytes)
 
 
-def is_meetup_game_input(text: str) -> bool:
-    """Treat every customer message containing a digit as a game/number request."""
-    return bool(re.search(r"\d", text))
-
-
 def is_meetup_qr_request(text: str) -> bool:
     return bool(re.fullmatch(
         r"(?i)\s*(?:qr|q\s*r|\u0915\u094d\u092f\u0942\u0906\u0930|"
@@ -1953,28 +1947,6 @@ async def allow_meetup_qr_request(message, context: ContextTypes.DEFAULT_TYPE, *
     return True
 
 
-def build_meetup_qr_keyboard() -> ReplyKeyboardMarkup:
-    return ReplyKeyboardMarkup(
-        [[MEETUP_QR_BUTTON_TEXT]],
-        resize_keyboard=True,
-        one_time_keyboard=False,
-        input_field_placeholder="QR button dabaye",
-        selective=True,
-    )
-
-
-async def send_meetup_qr_test_controls(message, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Show only the typing-keyboard QR control in the Meetup group."""
-    reply_parameters = ReplyParameters(message_id=message.message_id)
-    await send_with_retry(
-        context.bot.send_message,
-        chat_id=message.chat_id,
-        text="QR",
-        reply_parameters=reply_parameters,
-        reply_markup=build_meetup_qr_keyboard(),
-    )
-
-
 async def handle_meetup_qr_only_group(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Keep the Meetup group QR-only, without menus or any other bot flows."""
     message = get_update_message(update)
@@ -1985,10 +1957,6 @@ async def handle_meetup_qr_only_group(update: Update, context: ContextTypes.DEFA
     if text and is_meetup_qr_request(text):
         if await allow_meetup_qr_request(message, context):
             await send_next_qr(update, context)
-        raise ApplicationHandlerStop
-
-    if text and is_meetup_game_input(text):
-        await send_meetup_qr_test_controls(message, context)
         raise ApplicationHandlerStop
 
     # Never allow menus, rules, videos, approvals, or other replies in Meetup.
