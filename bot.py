@@ -9,7 +9,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import httpx
-from telegram import CallbackQuery, ChatPermissions, ForceReply, InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup, Update
+from telegram import CallbackQuery, ChatPermissions, ForceReply, InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup, ReplyParameters, Update
 from telegram.error import TimedOut
 from telegram.ext import Application, ApplicationHandlerStop, CallbackQueryHandler, CommandHandler, ContextTypes, MessageHandler, TypeHandler, filters
 
@@ -56,6 +56,7 @@ GAME_OK_TRIGGER_TEXT = "\U0001F3AE GAME OK \u2714\ufe0f\u2714\ufe0f"
 HAPPY_HOURS_PATTERN = r"(?i)\bhappy\s*hour[s]?\b|\bhappy\s*hor[s]?\b|\bhappy\s*hourse\b"
 QUICK_ACTION_CHART = "quick:chart"
 QUICK_ACTION_QR = "quick:qr"
+QUICK_ACTION_MEETUP_QR = "quick:meetup_qr"
 QUICK_ACTION_RULES = "quick:rules"
 QUICK_ACTION_TOTAL = "quick:total"
 QUICK_ACTION_GAME_OK = "quick:game_ok"
@@ -71,6 +72,7 @@ ALERT_CASHBACK_95_5_TEXT = "Cashback mode activate kar diya gaya hai.\nAb aap 95
 ALERT_CASHBACK_90_10_TEXT = "Cashback mode activate kar diya gaya hai.\nAb aap 90/10 mode me ho."
 ALERT_EXIT_MAIN_MODE_TEXT = "Main mode activate kar diya gaya hai.\nAb jo button choose karoge, wahi mode chalega."
 ALERT_CASHBACK_WITHDRAW_TEXT = "Apne total game ka amount dalo.\nYa `cashback total` likhkar auto total nikaalo."
+MEETUP_QR_BUTTON_TEXT = "\U0001F533 \u0915\u094d\u092f\u0942\u0906\u0930 \u0932\u0947\u0928\u0947 \u0915\u0947 \u0932\u093f\u090f \u0926\u092c\u093e\u090f\u0901"
 HAPPY_HOURS_TEXT = (
     "\U0001F916 TELEGRAM HAPPY HOURS BETA\n"
     "\U0001F4B8 10\u00D71000 FULL RATE\n\n"
@@ -1881,21 +1883,24 @@ def is_meetup_game_input(text: str) -> bool:
 
 def is_meetup_qr_request(text: str) -> bool:
     return bool(re.fullmatch(
-        r"(?i)\s*(?:qr|q\s*r|\u0915\u094d\u092f\u0942\u0906\u0930|qr\s+lene\s+ke\s+liye\s+dabaye)\s*",
+        r"(?i)\s*(?:qr|q\s*r|\u0915\u094d\u092f\u0942\u0906\u0930|"
+        r"qr\s+lene\s+ke\s+liye\s+dabaye|\U0001f533\s*\u0915\u094d\u092f\u0942\u0906\u0930\s+\u0932\u0947\u0928\u0947\s+\u0915\u0947\s+\u0932\u093f\u090f\s+\u0926\u092c\u093e\u090f\u0901)\s*",
         text,
     ))
 
 
-def build_meetup_qr_spam_key(message) -> str | None:
-    user_id = parse_chat_id(getattr(getattr(message, "from_user", None), "id", None))
+def build_meetup_qr_spam_key(message, user=None) -> str | None:
+    request_user = user or getattr(message, "from_user", None)
+    user_id = parse_chat_id(getattr(request_user, "id", None))
     if user_id is None:
         return None
     return f"{MEETUP_QR_ONLY_GROUP_ID}:{user_id}"
 
 
-async def allow_meetup_qr_request(message, context: ContextTypes.DEFAULT_TYPE) -> bool:
+async def allow_meetup_qr_request(message, context: ContextTypes.DEFAULT_TYPE, *, user=None) -> bool:
     """Allow three quick QR requests, then rate-limit only that customer."""
-    state_key = build_meetup_qr_spam_key(message)
+    request_user = user or getattr(message, "from_user", None)
+    state_key = build_meetup_qr_spam_key(message, request_user)
     if state_key is None:
         return False
 
@@ -1924,14 +1929,13 @@ async def allow_meetup_qr_request(message, context: ContextTypes.DEFAULT_TYPE) -
             if should_alert_owner:
                 owner_user_id = get_owner_user_id()
                 if owner_user_id is not None:
-                    user = getattr(message, "from_user", None)
                     await send_with_retry(
                         context.bot.send_message,
                         chat_id=owner_user_id,
                         text=(
                             "QR Spam Alert\n"
-                            f"User: {build_user_label(user)}\n"
-                            f"User ID: {getattr(user, 'id', 'unknown')}\n"
+                            f"User: {build_user_label(request_user)}\n"
+                            f"User ID: {getattr(request_user, 'id', 'unknown')}\n"
                             f"Group: {getattr(getattr(message, 'chat', None), 'title', 'Meetup Program')}"
                         ),
                     )
@@ -1952,10 +1956,32 @@ async def allow_meetup_qr_request(message, context: ContextTypes.DEFAULT_TYPE) -
 
 def build_meetup_qr_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
-        [["QR lene ke liye dabaye"]],
+        [[MEETUP_QR_BUTTON_TEXT]],
         resize_keyboard=True,
         one_time_keyboard=False,
-        input_field_placeholder="QR lene ke liye button dabaye",
+        input_field_placeholder="QR button dabaye",
+        selective=True,
+    )
+
+
+async def send_meetup_qr_test_controls(message, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show both Telegram QR button types for the Meetup-only test."""
+    reply_parameters = ReplyParameters(message_id=message.message_id)
+    await send_with_retry(
+        context.bot.send_message,
+        chat_id=message.chat_id,
+        text="\U0001F533",
+        reply_parameters=reply_parameters,
+        reply_markup=InlineKeyboardMarkup(
+            [[InlineKeyboardButton(MEETUP_QR_BUTTON_TEXT, callback_data=QUICK_ACTION_MEETUP_QR)]]
+        ),
+    )
+    await send_with_retry(
+        context.bot.send_message,
+        chat_id=message.chat_id,
+        text="\U0001F533",
+        reply_parameters=reply_parameters,
+        reply_markup=build_meetup_qr_keyboard(),
     )
 
 
@@ -1969,6 +1995,10 @@ async def handle_meetup_qr_only_group(update: Update, context: ContextTypes.DEFA
     if text and is_meetup_qr_request(text):
         if await allow_meetup_qr_request(message, context):
             await send_next_qr(update, context)
+        raise ApplicationHandlerStop
+
+    if text and is_meetup_game_input(text):
+        await send_meetup_qr_test_controls(message, context)
         raise ApplicationHandlerStop
 
     # Never allow menus, rules, videos, approvals, or other replies in Meetup.
@@ -2789,6 +2819,17 @@ async def handle_quick_action_callback(update: Update, context: ContextTypes.DEF
         return
 
     action = str(getattr(query, "data", "") or "").strip()
+
+    if action == QUICK_ACTION_MEETUP_QR:
+        callback_message = getattr(query, "message", None)
+        if parse_chat_id(getattr(callback_message, "chat_id", None)) != MEETUP_QR_ONLY_GROUP_ID:
+            await query.answer()
+            return
+
+        await query.answer()
+        if await allow_meetup_qr_request(callback_message, context, user=query.from_user):
+            await send_next_qr(update, context)
+        return
 
     async def remove_used_menu() -> None:
         """Keep the chat clean once the customer has chosen a menu action."""
