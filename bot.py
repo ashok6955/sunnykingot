@@ -2897,6 +2897,21 @@ async def handle_quick_action_callback(update: Update, context: ContextTypes.DEF
     if query is None:
         return
 
+    callback_message = getattr(query, "message", None)
+    if parse_chat_id(getattr(callback_message, "chat_id", None)) == MEETUP_QR_ONLY_GROUP_ID:
+        # Old inline menus can remain in chat after a deploy. Meetup accepts QR only.
+        if str(getattr(query, "data", "") or "") == QUICK_ACTION_QR:
+            await query.answer()
+            await send_next_qr(update, context)
+        else:
+            await query.answer("Meetup group me sirf QR system available hai.", show_alert=True)
+
+        try:
+            await query.delete_message()
+        except Exception:
+            logger.exception("Could not remove old Meetup menu message")
+        return
+
     if is_blocked_user(getattr(getattr(query, "from_user", None), "id", None)):
         await query.answer("Aapke liye bot access band hai.", show_alert=True)
         return
