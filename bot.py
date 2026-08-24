@@ -64,6 +64,7 @@ QUICK_ACTION_TOTAL = "quick:total"
 QUICK_ACTION_GAME_OK = "quick:game_ok"
 QUICK_ACTION_DS_OK = "quick:ds_ok"
 QUICK_ACTION_ADVANCE = "quick:advance"
+QUICK_ACTION_VIP_PLUS = "quick:vip_plus"
 QUICK_ACTION_MAIN_BUTTONS = "quick:main_buttons"
 QUICK_ACTION_CASHBACK_95_5 = "quick:cashback_95_5"
 QUICK_ACTION_CASHBACK_90_10 = "quick:cashback_90_10"
@@ -101,6 +102,25 @@ VIP_DS_OK_SUCCESS_TEXT = (
     "DISAWAR GAME OK \u2714\n"
     "RATE 10 x 1000\n"
     "Bot Beta 3"
+)
+VIP_PLUS_INFO_TEXT = (
+    "👑 *INTRODUCING VIP+* 👑\n\n"
+    "🔥 *VIP+ में आपको मिलेगा:*\n"
+    "✅ Unlimited Time\n"
+    "✅ Unlimited जोड़ियां\n"
+    "✅ Unlimited HRF\n"
+    "✅ Unlimited Crossing\n"
+    "✅ Play Unlimited Games\n"
+    "✅ No Rules for VIP Card Members\n"
+    "✅ Direct Sunny Ji Support\n"
+    "✅ WhatsApp Support\n"
+    "✅ Telegram Support\n"
+    "✅ Direct On-Call Support\n"
+    "✅ On-Time Payment\n"
+    "✅ *1000 तक का रेट*\n\n"
+    "💬 *VIP+ लेने के लिए Private Message करें*\n"
+    "🚀 *Join करो अभी!*\n\n"
+    "⭐ *Powered by Sunny Ji* ⭐"
 )
 
 WELCOME_CONTROL_PANEL_TEXT = (
@@ -1555,6 +1575,7 @@ def build_game_quick_actions_markup(message) -> InlineKeyboardMarkup:
         [InlineKeyboardButton("QR lene ke liye dabaye", callback_data=QUICK_ACTION_QR)],
         [InlineKeyboardButton("Game OK ke liye dabaye", callback_data=QUICK_ACTION_GAME_OK)],
         [InlineKeyboardButton("DS OK ke liye dabaye", callback_data=QUICK_ACTION_DS_OK)],
+        [InlineKeyboardButton("👑 VIP+", callback_data=QUICK_ACTION_VIP_PLUS)],
         [InlineKeyboardButton("Advance", callback_data=QUICK_ACTION_ADVANCE)],
     ])
 
@@ -1572,7 +1593,8 @@ def build_main_menu_keyboard() -> ReplyKeyboardMarkup:
         [
             [KeyboardButton("Menu ke liye dabaye")],
             [KeyboardButton("📜 Rules"), KeyboardButton("📊 Chart"), KeyboardButton("🔳 QR")],
-            [KeyboardButton("🎮 Game OK"), KeyboardButton("✅ DS OK"), KeyboardButton("⚙️ Advance")],
+            [KeyboardButton("🎮 Game OK"), KeyboardButton("✅ DS OK")],
+            [KeyboardButton("👑 VIP+"), KeyboardButton("⚙️ Advance")],
         ],
         resize_keyboard=True,
         is_persistent=True,
@@ -1605,6 +1627,14 @@ def build_advanced_quick_actions_markup(message) -> InlineKeyboardMarkup:
 
     rows.append([InlineKeyboardButton("Main Buttons", callback_data=QUICK_ACTION_MAIN_BUTTONS)])
     return InlineKeyboardMarkup(rows)
+
+
+async def send_vip_plus_info(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    message = get_update_message(update)
+    if message is None or is_configured_target_group(getattr(message, "chat_id", None)):
+        return
+
+    await reply_text(update, context, VIP_PLUS_INFO_TEXT, parse_mode="Markdown")
 
 
 async def send_welcome_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -3116,6 +3146,12 @@ async def handle_quick_action_callback(update: Update, context: ContextTypes.DEF
             await restore_menu_button()
         return
 
+    if action == QUICK_ACTION_VIP_PLUS:
+        await query.answer()
+        await send_vip_plus_info(update, context)
+        await restore_menu_button()
+        return
+
     if action == QUICK_ACTION_ADVANCE:
         message = get_update_message(update)
         await query.answer()
@@ -3409,6 +3445,7 @@ def main() -> None:
     )
     application.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"(?i)^\s*(?:📜\s*)?rules\s*$"), send_rules_book))
     application.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"(?i)^\s*(?:⚙️?\s*)?advance\s*$"), show_advanced_menu))
+    application.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"(?i)^\s*(?:👑\s*)?vip\+?\s*$"), send_vip_plus_info))
     application.add_handler(
         MessageHandler(
             filters.TEXT & filters.Regex(r"(?i)^\s*(?:menu\s+ke\s+liye\s+dabaye|menu)\s*$"),
