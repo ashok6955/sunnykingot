@@ -92,6 +92,12 @@ GAME_OK_SUCCESS_TEXT = (
 )
 NORMAL_GAME_OK_SUCCESS_TEXT = "GAME OK \u2714"
 VIP_GAME_OK_SUCCESS_TEXT = GAME_OK_SUCCESS_TEXT
+NORMAL_DS_OK_SUCCESS_TEXT = "DISAWAR GAME OK \u2714"
+VIP_DS_OK_SUCCESS_TEXT = (
+    "DISAWAR GAME OK \u2714\n"
+    "RATE 10 x 1000\n"
+    "Bot Beta 3"
+)
 
 WELCOME_CONTROL_PANEL_TEXT = (
     "👑 SUNNY KING OF KHAIWAL 👑\n\n"
@@ -1217,6 +1223,13 @@ def get_game_ok_success_text(message) -> str:
     if customer_id is not None and customer_id in load_vip_user_ids():
         return VIP_GAME_OK_SUCCESS_TEXT
     return NORMAL_GAME_OK_SUCCESS_TEXT
+
+
+def get_ds_ok_success_text(message) -> str:
+    customer_id = get_approval_customer_id(message)
+    if customer_id is not None and customer_id in load_vip_user_ids():
+        return VIP_DS_OK_SUCCESS_TEXT
+    return NORMAL_DS_OK_SUCCESS_TEXT
 
 
 def should_relay_group_message(message) -> bool:
@@ -2888,7 +2901,7 @@ async def send_ds_ok_from_button(update: Update, context: ContextTypes.DEFAULT_T
         update,
         context,
         target_group_id=target_group_id,
-        success_text="DISAWAR GAME OK \u2714",
+        success_text=get_ds_ok_success_text(callback_message),
         no_message_text=f"Koi recent game message nahi mila. Pehle number wale game message bhejo ya unme se kisi message par reply karke `{GAME_OK_TRIGGER_TEXT}` likho.",
         invalid_message_text=f"Recent saved message game format me nahi mila. Number wala game message bhejo ya game message par reply karke `{GAME_OK_TRIGGER_TEXT}` likho.",
         require_payment_verification=True,
@@ -2953,7 +2966,7 @@ async def send_ds_ok_banner(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         update,
         context,
         target_group_id=target_group_id,
-        success_text="DISAWAR GAME OK \u2714",
+        success_text=get_ds_ok_success_text(message),
         no_message_text="Koi recent game message nahi mila. Pehle number wale game message bhejo ya unme se kisi message par reply karke `ds ok` likho.",
         invalid_message_text="Recent saved message game format me nahi mila. Number wala game message bhejo ya game message par reply karke `ds ok` likho.",
     )
@@ -2996,7 +3009,7 @@ async def send_ds_ok(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         )
         return
 
-    await reply_text(update, context, "DISAWAR GAME OK \u2714")
+    await reply_text(update, context, get_ds_ok_success_text(message))
     for source_text in source_messages:
         await send_with_retry(context.bot.send_message, chat_id=target_group_id, text=source_text)
 
