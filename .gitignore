@@ -3,3 +3,4 @@ __pycache__/
 .env
 state.json
 meetup_qr_control_state.json
+vip_users.json

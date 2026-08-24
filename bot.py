@@ -30,6 +30,7 @@ APPROVAL_STATE_FILE = BASE_DIR / "approval_state.json"
 CASHBACK_MODE_FILE = BASE_DIR / "cashback_mode.json"
 CONTROL_PANEL_STATE_FILE = BASE_DIR / "control_panel_state.json"
 BLOCKED_USERS_FILE = BASE_DIR / "blocked_users.json"
+VIP_USERS_FILE = BASE_DIR / "vip_users.json"
 MEETUP_QR_SPAM_STATE_FILE = BASE_DIR / "meetup_qr_spam_state.json"
 MEETUP_QR_CONTROL_STATE_FILE = BASE_DIR / "meetup_qr_control_state.json"
 SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
@@ -89,6 +90,8 @@ GAME_OK_SUCCESS_TEXT = (
     "RATE 10 x 1000\n"
     "Bot Beta 3"
 )
+NORMAL_GAME_OK_SUCCESS_TEXT = "GAME OK \u2714"
+VIP_GAME_OK_SUCCESS_TEXT = GAME_OK_SUCCESS_TEXT
 
 WELCOME_CONTROL_PANEL_TEXT = (
     "👑 SUNNY KING OF KHAIWAL 👑\n\n"
@@ -285,6 +288,30 @@ def load_blocked_user_ids() -> set[int]:
 
 def save_blocked_user_ids(user_ids: set[int]) -> None:
     BLOCKED_USERS_FILE.write_text(
+        json.dumps(sorted(user_ids), indent=2),
+        encoding="utf-8",
+    )
+
+
+def load_vip_user_ids() -> set[int]:
+    """Load customer IDs that receive the VIP Game OK confirmation."""
+    if not VIP_USERS_FILE.exists():
+        return set()
+
+    try:
+        data = json.loads(VIP_USERS_FILE.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        logger.warning("Could not read VIP users file. Starting with no VIP users.")
+        return set()
+
+    if not isinstance(data, list):
+        return set()
+
+    return {user_id for value in data if (user_id := parse_chat_id(value)) is not None}
+
+
+def save_vip_user_ids(user_ids: set[int]) -> None:
+    VIP_USERS_FILE.write_text(
         json.dumps(sorted(user_ids), indent=2),
         encoding="utf-8",
     )
@@ -1169,6 +1196,29 @@ def get_cashback_success_text_for_message(message) -> str | None:
     return None
 
 
+def get_approval_customer_id(message) -> int | None:
+    """Use the original game sender when an approval happens from a menu reply."""
+    replied_user_id = get_replied_user_id(message)
+    if replied_user_id is not None:
+        return replied_user_id
+
+    user = getattr(message, "from_user", None)
+    if getattr(user, "is_bot", False):
+        return None
+    return parse_chat_id(getattr(user, "id", None))
+
+
+def get_game_ok_success_text(message) -> str:
+    cashback_text = get_cashback_success_text_for_message(message)
+    if cashback_text is not None:
+        return cashback_text
+
+    customer_id = get_approval_customer_id(message)
+    if customer_id is not None and customer_id in load_vip_user_ids():
+        return VIP_GAME_OK_SUCCESS_TEXT
+    return NORMAL_GAME_OK_SUCCESS_TEXT
+
+
 def should_relay_group_message(message) -> bool:
     text = str(getattr(message, "text", "") or "").strip()
     return bool(text and looks_like_game_message(text))
@@ -1330,6 +1380,54 @@ async def unblock_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     blocked_user_ids.remove(user_id)
     save_blocked_user_ids(blocked_user_ids)
     await reply_text(update, context, f"User `{user_id}` unblock ho gaya. Ab bot iske messages par kaam karega.", parse_mode="Markdown")
+
+
+async def add_vip_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await ensure_block_manager_access(update, context):
+        return
+
+    message = get_update_message(update)
+    user_id = get_command_user_id(message, context)
+    if user_id is None:
+        await reply_text(update, context, "Customer ke message par reply karke `/addvip` likho, ya `/addvip USER_ID` likho.", parse_mode="Markdown")
+        return
+
+    vip_user_ids = load_vip_user_ids()
+    vip_user_ids.add(user_id)
+    save_vip_user_ids(vip_user_ids)
+    await reply_text(update, context, f"User `{user_id}` VIP set ho gaya. Isi Game OK button par isko VIP rate message milega.", parse_mode="Markdown")
+
+
+async def remove_vip_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await ensure_block_manager_access(update, context):
+        return
+
+    message = get_update_message(update)
+    user_id = get_command_user_id(message, context)
+    if user_id is None:
+        await reply_text(update, context, "Customer ke message par reply karke `/removevip` likho, ya `/removevip USER_ID` likho.", parse_mode="Markdown")
+        return
+
+    vip_user_ids = load_vip_user_ids()
+    if user_id not in vip_user_ids:
+        await reply_text(update, context, f"User `{user_id}` VIP list me nahi hai.", parse_mode="Markdown")
+        return
+
+    vip_user_ids.remove(user_id)
+    save_vip_user_ids(vip_user_ids)
+    await reply_text(update, context, f"User `{user_id}` normal customer set ho gaya. Ab isi button par simple GAME OK jayega.", parse_mode="Markdown")
+
+
+async def show_vip_users(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await ensure_block_manager_access(update, context):
+        return
+
+    vip_user_ids = sorted(load_vip_user_ids())
+    if not vip_user_ids:
+        await reply_text(update, context, "Abhi koi VIP customer set nahi hai.")
+        return
+
+    await reply_text(update, context, "VIP customer IDs:\n" + "\n".join(f"- `{user_id}`" for user_id in vip_user_ids), parse_mode="Markdown")
 
 
 async def send_my_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -2626,7 +2724,7 @@ async def send_game_ok_verified(update: Update, context: ContextTypes.DEFAULT_TY
             parse_mode="Markdown",
         )
         return
-    success_text = get_cashback_success_text_for_message(message) or GAME_OK_SUCCESS_TEXT
+    success_text = get_game_ok_success_text(message)
     await process_game_approval(
         update,
         context,
@@ -2678,7 +2776,7 @@ async def send_game_ok_plus(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         )
         return
 
-    success_text = get_cashback_success_text_for_message(message) or GAME_OK_SUCCESS_TEXT
+    success_text = get_game_ok_success_text(message)
     await reply_text(update, context, success_text)
     for source_text in source_messages:
         await send_with_retry(context.bot.send_message, chat_id=target_group_id, text=source_text)
@@ -2702,7 +2800,7 @@ async def send_game_ok_from_button(update: Update, context: ContextTypes.DEFAULT
         )
         return False
 
-    success_text = get_cashback_success_text_for_message(callback_message) or GAME_OK_SUCCESS_TEXT
+    success_text = get_game_ok_success_text(callback_message)
     return await process_game_approval(
         update,
         context,
@@ -3250,6 +3348,9 @@ def main() -> None:
     application.add_handler(MessageHandler(filters.ALL, handle_meetup_qr_only_group), group=-2)
     application.add_handler(CommandHandler("blockuser", block_user), group=0)
     application.add_handler(CommandHandler("unblockuser", unblock_user), group=0)
+    application.add_handler(CommandHandler("addvip", add_vip_user), group=0)
+    application.add_handler(CommandHandler("removevip", remove_vip_user), group=0)
+    application.add_handler(CommandHandler("viplist", show_vip_users), group=0)
     application.add_handler(MessageHandler(BLOCKED_USER_FILTER, stop_blocked_user_actions), group=-1)
     application.add_handler(CallbackQueryHandler(handle_quick_action_callback, pattern=r"^quick:"))
     application.add_handler(CommandHandler("start", start))
