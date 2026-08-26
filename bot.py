@@ -48,6 +48,7 @@ MEETUP_QR_CONTROL_DELETE_DELAY_SECONDS = 60
 QUIET_HOURS_START = time(5, 1)
 QUIET_HOURS_END = time(6, 0)
 BUTTON_SESSION_GAP = timedelta(minutes=30)
+CONTROL_PANEL_OPEN_DELAY_SECONDS = 4
 EARLY_GAME_ACCESS_END = time(5, 1)
 APPROVAL_DUPLICATE_WINDOW = timedelta(seconds=45)
 APPROVAL_BLOCK_WINDOWS = (
@@ -1824,7 +1825,7 @@ async def ensure_control_panel(update: Update, context: ContextTypes.DEFAULT_TYP
             context.bot,
             message.chat_id,
             keyboard_message.message_id,
-            1,
+            CONTROL_PANEL_OPEN_DELAY_SECONDS,
         ),
         update=update,
     )
@@ -3568,6 +3569,7 @@ async def remember_recent_game_message(update: Update, context: ContextTypes.DEF
         return
 
     is_game_text = looks_like_game_message(text)
+    has_number = bool(re.search(r"\d", text))
 
     if is_game_text:
         record_daytime_game_activity(message)
@@ -3582,8 +3584,8 @@ async def remember_recent_game_message(update: Update, context: ContextTypes.DEF
 
     try:
         clear_control_panel_for_message(message)
-        # A new number/game should immediately make the main typing keyboard available.
-        await ensure_control_panel(update, context, force=is_game_text)
+        # Any numeric message, including a short number such as "12", opens the menu keyboard.
+        await ensure_control_panel(update, context, force=is_game_text or has_number)
         logger.info("MEMORY_HANDLER refreshed control panel chat_id=%s", getattr(message, "chat_id", None))
     except Exception:
         logger.exception("MEMORY_HANDLER could not refresh control panel chat_id=%s", getattr(message, "chat_id", None))
