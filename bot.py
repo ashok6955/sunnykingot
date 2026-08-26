@@ -135,6 +135,12 @@ VIP_PLUS_INFO_TEXT = (
     "🚀 *Join करो अभी!*\n\n"
     "⭐ *Powered by Sunny Ji* ⭐"
 )
+TIME_OVER_VIP_PLUS_TEXT = (
+    "⏰ *TIME OVER*\n\n"
+    "इस समय Normal Game Allow नहीं है।\n\n"
+    "✨ *Extra Time और Extra Benefits के लिए VIP+ लें।*\n"
+    "👇 *VIP+ की पूरी जानकारी नीचे है:*"
+)
 EARLY_GAME_NOT_ALLOWED_TEXT = (
     "⚠️ *आपकी गेम अभी Allow नहीं है।*\n\n"
     "Telegram पर आपकी गेम अभी Allow नहीं की गई है।\n\n"
@@ -566,6 +572,17 @@ class EarlyGameAccessFilter(filters.MessageFilter):
 
 
 EARLY_GAME_ACCESS_FILTER = EarlyGameAccessFilter()
+
+
+class NormalGameTimeWindowFilter(filters.MessageFilter):
+    """Match game messages during the normal-customer restricted windows."""
+
+    def filter(self, message) -> bool:
+        text = str(getattr(message, "text", "") or "").strip()
+        return bool(text and looks_like_game_message(text) and is_in_time_windows(NORMAL_APPROVAL_BLOCK_WINDOWS))
+
+
+NORMAL_GAME_TIME_WINDOW_FILTER = NormalGameTimeWindowFilter()
 
 
 def clear_control_panel_for_message(message) -> None:
@@ -1142,15 +1159,16 @@ def is_quiet_hours() -> bool:
     return QUIET_HOURS_START <= current_time < QUIET_HOURS_END
 
 
+def is_in_time_windows(windows, current_time: time | None = None) -> bool:
+    current_time = current_time or datetime.now(BOT_TIMEZONE).time()
+    return any(start <= current_time <= end for start, end in windows)
+
+
 def is_game_approval_blocked(message=None) -> bool:
     """Apply the normal or VIP approval schedule to Game OK and DS OK only."""
-    current_time = datetime.now(BOT_TIMEZONE).time()
     customer_id = get_approval_customer_id(message) if message is not None else None
     windows = APPROVAL_BLOCK_WINDOWS if customer_id in load_vip_user_ids() else NORMAL_APPROVAL_BLOCK_WINDOWS
-    for start, end in windows:
-        if start <= current_time <= end:
-            return True
-    return False
+    return is_in_time_windows(windows)
 
 
 async def send_with_retry(send_callable, *args, retries: int = 2, retry_delay: float = 1.0, **kwargs):
@@ -2369,6 +2387,31 @@ async def enforce_early_game_access(update: Update, context: ContextTypes.DEFAUL
     raise ApplicationHandlerStop
 
 
+async def enforce_normal_game_time_window(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Offer VIP+ when a normal customer sends a game during a closed window."""
+    message = get_update_message(update)
+    if message is None:
+        return
+
+    if getattr(getattr(message, "from_user", None), "is_bot", False):
+        return
+
+    chat_id = getattr(message, "chat_id", None)
+    if is_meetup_qr_only_chat(chat_id) or is_configured_target_group(chat_id):
+        return
+
+    customer_id = parse_chat_id(getattr(getattr(message, "from_user", None), "id", None))
+    if customer_id in load_vip_user_ids():
+        return
+
+    if not is_in_time_windows(NORMAL_APPROVAL_BLOCK_WINDOWS):
+        return
+
+    await reply_text(update, context, TIME_OVER_VIP_PLUS_TEXT, parse_mode="Markdown")
+    await reply_text(update, context, VIP_PLUS_INFO_TEXT, parse_mode="Markdown")
+    raise ApplicationHandlerStop
+
+
 async def send_chart_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if is_quiet_hours():
         return
@@ -3530,6 +3573,7 @@ def main() -> None:
 
     application.add_handler(TypeHandler(Update, log_incoming_update), group=-3)
     application.add_handler(MessageHandler(filters.ALL, handle_meetup_qr_only_group), group=-2)
+    application.add_handler(MessageHandler(NORMAL_GAME_TIME_WINDOW_FILTER, enforce_normal_game_time_window), group=-1)
     application.add_handler(MessageHandler(EARLY_GAME_ACCESS_FILTER, enforce_early_game_access), group=-1)
     application.add_handler(CommandHandler("blockuser", block_user), group=0)
     application.add_handler(CommandHandler("unblockuser", unblock_user), group=0)
