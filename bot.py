@@ -19,6 +19,7 @@ from game_total import build_game_total_reply, looks_like_game_message
 BASE_DIR = Path(__file__).resolve().parent
 IMAGES_DIR = BASE_DIR / "images"
 CHART_IMAGE_DIR = BASE_DIR / "chart_image"
+NORMAL_CHART_IMAGE_PATH = CHART_IMAGE_DIR / "normal.png"
 WELCOME_VIDEO_PATH = BASE_DIR / "welcome_video" / "welcome.mp4"
 STATE_FILE = BASE_DIR / "state.json"
 CHAT_MEMORY_FILE = BASE_DIR / "chat_memory.json"
@@ -1136,7 +1137,18 @@ def get_chart_image() -> Path | None:
         for file_path in CHART_IMAGE_DIR.iterdir()
         if file_path.is_file() and file_path.suffix.lower() in SUPPORTED_EXTENSIONS
     )
-    return chart_images[0] if chart_images else None
+    # chart.png is the original chart retained for VIP customers.
+    vip_chart_images = [image for image in chart_images if image != NORMAL_CHART_IMAGE_PATH]
+    return vip_chart_images[0] if vip_chart_images else None
+
+
+def get_chart_image_for_customer(message) -> Path | None:
+    """Normal users see the normal chart; VIP users keep the original chart."""
+    customer_id = get_approval_customer_id(message)
+    if customer_id is not None and customer_id in load_vip_user_ids():
+        return get_chart_image()
+
+    return NORMAL_CHART_IMAGE_PATH if NORMAL_CHART_IMAGE_PATH.is_file() else get_chart_image()
 
 
 def get_update_message(update: Update):
@@ -2414,7 +2426,8 @@ async def send_chart_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     if is_quiet_hours():
         return
 
-    chart_image = get_chart_image()
+    message = get_update_message(update)
+    chart_image = get_chart_image_for_customer(message)
     if not chart_image:
         await reply_text(
             update,
