@@ -137,9 +137,7 @@ VIP_PLUS_INFO_TEXT = (
 )
 TIME_OVER_VIP_PLUS_TEXT = (
     "⏰ *TIME OVER*\n\n"
-    "इस समय Normal Game Allow नहीं है।\n\n"
-    "✨ *Extra Time और Extra Benefits के लिए VIP+ लें।*\n"
-    "👇 *VIP+ की पूरी जानकारी नीचे है:*"
+    "✨ *Extra Time और Extra Benefits के लिए VIP+ लें।*"
 )
 EARLY_GAME_NOT_ALLOWED_TEXT = (
     "⚠️ *आपकी गेम अभी Allow नहीं है।*\n\n"
