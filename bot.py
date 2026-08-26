@@ -1730,9 +1730,10 @@ def build_main_menu_keyboard() -> ReplyKeyboardMarkup:
             [KeyboardButton("🎮 Game OK"), KeyboardButton("✅ DS OK")],
             [KeyboardButton("👑 VIP+"), KeyboardButton("⚙️ Advance")],
         ],
-        resize_keyboard=True,
+        resize_keyboard=False,
+        one_time_keyboard=False,
         is_persistent=True,
-        input_field_placeholder="Neeche menu se option choose karein",
+        input_field_placeholder="☰ Main Menu se option chune",
     )
 
 
@@ -1817,21 +1818,12 @@ async def ensure_control_panel(update: Update, context: ContextTypes.DEFAULT_TYP
     if not force and not should_show_quick_actions(message):
         return
 
-    keyboard_message = await send_with_retry(
+    await send_with_retry(
         context.bot.send_message,
         chat_id=message.chat_id,
-        text="\u200b",
+        text="☰ Main Menu",
         reply_markup=build_main_menu_keyboard(),
         **get_business_kwargs(update),
-    )
-    context.application.create_task(
-        delete_bot_message_after_delay(
-            context.bot,
-            message.chat_id,
-            keyboard_message.message_id,
-            CONTROL_PANEL_OPEN_DELAY_SECONDS,
-        ),
-        update=update,
     )
     mark_quick_actions_sent(message)
 
