@@ -1179,9 +1179,10 @@ def is_in_time_windows(windows, current_time: time | None = None) -> bool:
     return any(start <= current_time <= end for start, end in windows)
 
 
-def is_game_approval_blocked(message=None) -> bool:
+def is_game_approval_blocked(message=None, *, customer_id: int | None = None) -> bool:
     """Apply the normal or VIP approval schedule to Game OK and DS OK only."""
-    customer_id = get_approval_customer_id(message) if message is not None else None
+    if customer_id is None:
+        customer_id = get_approval_customer_id(message) if message is not None else None
     windows = APPROVAL_BLOCK_WINDOWS if customer_id in load_vip_user_ids() else NORMAL_APPROVAL_BLOCK_WINDOWS
     return is_in_time_windows(windows)
 
@@ -1372,19 +1373,21 @@ def get_approval_customer_id(message) -> int | None:
     return parse_chat_id(getattr(user, "id", None))
 
 
-def get_game_ok_success_text(message) -> str:
+def get_game_ok_success_text(message, *, customer_id: int | None = None) -> str:
     cashback_text = get_cashback_success_text_for_message(message)
     if cashback_text is not None:
         return cashback_text
 
-    customer_id = get_approval_customer_id(message)
+    if customer_id is None:
+        customer_id = get_approval_customer_id(message)
     if customer_id is not None and customer_id in load_vip_user_ids():
         return VIP_GAME_OK_SUCCESS_TEXT
     return NORMAL_GAME_OK_SUCCESS_TEXT
 
 
-def get_ds_ok_success_text(message) -> str:
-    customer_id = get_approval_customer_id(message)
+def get_ds_ok_success_text(message, *, customer_id: int | None = None) -> str:
+    if customer_id is None:
+        customer_id = get_approval_customer_id(message)
     if customer_id is not None and customer_id in load_vip_user_ids():
         return VIP_DS_OK_SUCCESS_TEXT
     return NORMAL_DS_OK_SUCCESS_TEXT
@@ -1730,7 +1733,7 @@ def build_main_menu_keyboard() -> ReplyKeyboardMarkup:
             [KeyboardButton("🎮 Game OK"), KeyboardButton("✅ DS OK")],
             [KeyboardButton("👑 VIP+"), KeyboardButton("⚙️ Advance")],
         ],
-        resize_keyboard=False,
+        resize_keyboard=True,
         one_time_keyboard=False,
         is_persistent=True,
         input_field_placeholder="☰ Main Menu se option chune",
@@ -2420,9 +2423,16 @@ async def enforce_normal_game_time_window(update: Update, context: ContextTypes.
         raise ApplicationHandlerStop
 
 
-async def send_normal_time_over_vip_offer(update: Update, context: ContextTypes.DEFAULT_TYPE, message) -> bool:
+async def send_normal_time_over_vip_offer(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    message,
+    *,
+    customer_id: int | None = None,
+) -> bool:
     """Send the VIP+ offer for every normal-customer game/approval attempt in a closed window."""
-    customer_id = get_approval_customer_id(message)
+    if customer_id is None:
+        customer_id = get_approval_customer_id(message)
     if customer_id in load_vip_user_ids():
         return False
 
@@ -2832,10 +2842,14 @@ async def process_game_approval(
     clear_cashback_mode_on_success: bool = False,
     approval_message=None,
     target_notice_text: str | None = None,
+    customer_id: int | None = None,
 ) -> bool:
     message = approval_message or get_update_message(update)
-    if is_game_approval_blocked(message):
-        await send_normal_time_over_vip_offer(update, context, message)
+    if customer_id is None:
+        customer_id = get_approval_customer_id(message)
+
+    if is_game_approval_blocked(message, customer_id=customer_id):
+        await send_normal_time_over_vip_offer(update, context, message, customer_id=customer_id)
         return False
 
     source_messages, used_reply_message, reply_message_id = collect_game_source_messages(message)
@@ -2878,7 +2892,7 @@ async def process_game_approval(
 
     mark_approval_sent(message, source_messages, reply_message_id)
     clear_processed_game_memory(message.chat_id, source_messages, used_reply_message)
-    record_daytime_game_activity(message, customer_id=get_approval_customer_id(message))
+    record_daytime_game_activity(message, customer_id=customer_id)
     if clear_cashback_mode_on_success:
         clear_cashback_mode(message)
     return True
@@ -3039,11 +3053,13 @@ async def send_game_ok_plus(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 
 async def send_game_ok_from_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
-    callback_message = getattr(getattr(update, "callback_query", None), "message", None)
+    query = getattr(update, "callback_query", None)
+    callback_message = getattr(query, "message", None)
+    customer_id = parse_chat_id(getattr(getattr(query, "from_user", None), "id", None))
     if is_quiet_hours():
         return False
-    if is_game_approval_blocked(callback_message):
-        await send_normal_time_over_vip_offer(update, context, callback_message)
+    if is_game_approval_blocked(callback_message, customer_id=customer_id):
+        await send_normal_time_over_vip_offer(update, context, callback_message, customer_id=customer_id)
         return False
 
     target_group_id = get_game_target_group_id()
@@ -3056,7 +3072,7 @@ async def send_game_ok_from_button(update: Update, context: ContextTypes.DEFAULT
         )
         return False
 
-    success_text = get_game_ok_success_text(callback_message)
+    success_text = get_game_ok_success_text(callback_message, customer_id=customer_id)
     return await process_game_approval(
         update,
         context,
@@ -3065,6 +3081,7 @@ async def send_game_ok_from_button(update: Update, context: ContextTypes.DEFAULT
         no_message_text=f"Koi recent game message nahi mila. Pehle number wale game message bhejo ya unme se kisi message par reply karke `{GAME_OK_TRIGGER_TEXT}` likho.",
         invalid_message_text=f"Recent saved message game format me nahi mila. Number wala game message bhejo ya game message par reply karke `{GAME_OK_TRIGGER_TEXT}` likho.",
         approval_message=callback_message,
+        customer_id=customer_id,
     )
 
 async def handle_game_ok_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -3129,11 +3146,13 @@ async def send_game_ok_manual_banner(update: Update, context: ContextTypes.DEFAU
     )
 
 async def send_ds_ok_from_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
-    callback_message = getattr(getattr(update, "callback_query", None), "message", None)
+    query = getattr(update, "callback_query", None)
+    callback_message = getattr(query, "message", None)
+    customer_id = parse_chat_id(getattr(getattr(query, "from_user", None), "id", None))
     if is_quiet_hours():
         return False
-    if is_game_approval_blocked(callback_message):
-        await send_normal_time_over_vip_offer(update, context, callback_message)
+    if is_game_approval_blocked(callback_message, customer_id=customer_id):
+        await send_normal_time_over_vip_offer(update, context, callback_message, customer_id=customer_id)
         return False
 
     target_group_id = get_target_group_id()
@@ -3150,11 +3169,12 @@ async def send_ds_ok_from_button(update: Update, context: ContextTypes.DEFAULT_T
         update,
         context,
         target_group_id=target_group_id,
-        success_text=get_ds_ok_success_text(callback_message),
+        success_text=get_ds_ok_success_text(callback_message, customer_id=customer_id),
         no_message_text=f"Koi recent game message nahi mila. Pehle number wale game message bhejo ya unme se kisi message par reply karke `{GAME_OK_TRIGGER_TEXT}` likho.",
         invalid_message_text=f"Recent saved message game format me nahi mila. Number wala game message bhejo ya game message par reply karke `{GAME_OK_TRIGGER_TEXT}` likho.",
         require_payment_verification=True,
         approval_message=callback_message,
+        customer_id=customer_id,
     )
     return
 
@@ -3324,6 +3344,14 @@ async def handle_quick_action_callback(update: Update, context: ContextTypes.DEF
         await query.edit_message_text(
             text="Menu options:",
             reply_markup=build_game_quick_actions_markup(get_update_message(update)),
+        )
+        # Keep the original bottom keyboard available as well as the new
+        # clickable inline menu, so existing customer habits keep working.
+        await reply_text(
+            update,
+            context,
+            "Main Menu keyboard bhi neeche khul gaya hai.",
+            reply_markup=build_main_menu_keyboard(),
         )
         return
 
