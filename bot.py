@@ -126,8 +126,9 @@ VIP_PLUS_INFO_TEXT = (
 )
 EARLY_GAME_NOT_ALLOWED_TEXT = (
     "⚠️ *आपकी गेम अभी Allow नहीं है।*\n\n"
-    "आज की गेम Telegram पर Allow कराने के लिए कृपया *Sanjeev Ji* से Telegram पर संपर्क करें।\n\n"
-    "📩 *पहले Sanjeev Ji से approval लें, उसके बाद ही गेम भेजें।*"
+    "Telegram पर आपकी गेम अभी Allow नहीं की गई है।\n\n"
+    "📩 *कृपया Sunny Ji से Telegram पर संपर्क करें।*\n"
+    "पहले approval लें, उसके बाद ही गेम भेजें।"
 )
 
 WELCOME_CONTROL_PANEL_TEXT = (
@@ -358,13 +359,13 @@ def save_daily_game_activity(activity: dict[str, dict[str, str]]) -> None:
     )
 
 
-def record_daytime_game_activity(message, now: datetime | None = None) -> None:
+def record_daytime_game_activity(message, now: datetime | None = None, customer_id: int | None = None) -> None:
     """A game sent from noon to midnight enables that customer for the next early window."""
     current_time = now or datetime.now(BOT_TIMEZONE)
     if current_time.time() < time(12, 0):
         return
 
-    user_id = parse_chat_id(getattr(getattr(message, "from_user", None), "id", None))
+    user_id = customer_id or parse_chat_id(getattr(getattr(message, "from_user", None), "id", None))
     if user_id is None:
         return
 
@@ -2793,6 +2794,7 @@ async def process_game_approval(
 
     mark_approval_sent(message, source_messages, reply_message_id)
     clear_processed_game_memory(message.chat_id, source_messages, used_reply_message)
+    record_daytime_game_activity(message, customer_id=get_approval_customer_id(message))
     if clear_cashback_mode_on_success:
         clear_cashback_mode(message)
     return True
@@ -2940,6 +2942,7 @@ async def send_game_ok_plus(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
     mark_approval_sent(message, source_messages, reply_message_id)
     clear_processed_game_memory(message.chat_id, source_messages, used_reply_message)
+    record_daytime_game_activity(message, customer_id=get_approval_customer_id(message))
 
 
 async def send_game_ok_from_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
