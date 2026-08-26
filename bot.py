@@ -1821,8 +1821,8 @@ async def ensure_control_panel(update: Update, context: ContextTypes.DEFAULT_TYP
     await send_with_retry(
         context.bot.send_message,
         chat_id=message.chat_id,
-        text="☰ Main Menu",
-        reply_markup=build_main_menu_keyboard(),
+        text="☰ Main Menu खोलने के लिए नीचे button दबाएं।",
+        reply_markup=build_menu_button_markup(),
         **get_business_kwargs(update),
     )
     mark_quick_actions_sent(message)
@@ -2413,8 +2413,8 @@ async def enforce_normal_game_time_window(update: Update, context: ContextTypes.
         await reply_text(
             update,
             context,
-            "☰ Main Menu",
-            reply_markup=build_main_menu_keyboard(),
+            "☰ Main Menu खोलने के लिए नीचे button दबाएं।",
+            reply_markup=build_menu_button_markup(),
         )
         mark_quick_actions_sent(message)
         raise ApplicationHandlerStop
