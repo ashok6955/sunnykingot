@@ -4,3 +4,4 @@ __pycache__/
 state.json
 meetup_qr_control_state.json
 vip_users.json
+daily_game_activity.json

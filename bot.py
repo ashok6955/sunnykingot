@@ -33,6 +33,7 @@ BLOCKED_USERS_FILE = BASE_DIR / "blocked_users.json"
 VIP_USERS_FILE = BASE_DIR / "vip_users.json"
 MEETUP_QR_SPAM_STATE_FILE = BASE_DIR / "meetup_qr_spam_state.json"
 MEETUP_QR_CONTROL_STATE_FILE = BASE_DIR / "meetup_qr_control_state.json"
+DAILY_GAME_ACTIVITY_FILE = BASE_DIR / "daily_game_activity.json"
 SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 BOT_TIMEZONE = ZoneInfo("Asia/Kolkata")
 # Meetup Program: only number-only customer messages receive the next QR.
@@ -46,6 +47,7 @@ MEETUP_QR_CONTROL_DELETE_DELAY_SECONDS = 60
 QUIET_HOURS_START = time(5, 1)
 QUIET_HOURS_END = time(6, 0)
 BUTTON_SESSION_GAP = timedelta(minutes=30)
+EARLY_GAME_ACCESS_END = time(5, 1)
 APPROVAL_DUPLICATE_WINDOW = timedelta(seconds=45)
 APPROVAL_BLOCK_WINDOWS = (
     (time(15, 5), time(15, 15)),
@@ -121,6 +123,11 @@ VIP_PLUS_INFO_TEXT = (
     "💬 *VIP+ लेने के लिए Private Message करें*\n"
     "🚀 *Join करो अभी!*\n\n"
     "⭐ *Powered by Sunny Ji* ⭐"
+)
+EARLY_GAME_NOT_ALLOWED_TEXT = (
+    "⚠️ *आपकी गेम अभी Allow नहीं है।*\n\n"
+    "आज की गेम Telegram पर Allow कराने के लिए कृपया *Sanjeev Ji* से Telegram पर संपर्क करें।\n\n"
+    "📩 *पहले Sanjeev Ji से approval लें, उसके बाद ही गेम भेजें।*"
 )
 
 WELCOME_CONTROL_PANEL_TEXT = (
@@ -323,6 +330,67 @@ def save_blocked_user_ids(user_ids: set[int]) -> None:
     )
 
 
+def load_daily_game_activity() -> dict[str, dict[str, str]]:
+    """Keep the previous day's afternoon game activity for early-morning access."""
+    if not DAILY_GAME_ACTIVITY_FILE.exists():
+        return {}
+
+    try:
+        data = json.loads(DAILY_GAME_ACTIVITY_FILE.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        logger.warning("Could not read daily game activity. Starting with empty activity.")
+        return {}
+
+    if not isinstance(data, dict):
+        return {}
+
+    return {
+        str(day): {str(user_id): str(timestamp) for user_id, timestamp in users.items()}
+        for day, users in data.items()
+        if isinstance(day, str) and isinstance(users, dict)
+    }
+
+
+def save_daily_game_activity(activity: dict[str, dict[str, str]]) -> None:
+    DAILY_GAME_ACTIVITY_FILE.write_text(
+        json.dumps(activity, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+
+
+def record_daytime_game_activity(message, now: datetime | None = None) -> None:
+    """A game sent from noon to midnight enables that customer for the next early window."""
+    current_time = now or datetime.now(BOT_TIMEZONE)
+    if current_time.time() < time(12, 0):
+        return
+
+    user_id = parse_chat_id(getattr(getattr(message, "from_user", None), "id", None))
+    if user_id is None:
+        return
+
+    activity = load_daily_game_activity()
+    day_key = current_time.date().isoformat()
+    activity[day_key] = {**activity.get(day_key, {}), str(user_id): current_time.isoformat()}
+
+    # The bot only needs the current and previous day for this check.
+    cutoff_day = (current_time - timedelta(days=2)).date().isoformat()
+    activity = {day: users for day, users in activity.items() if day >= cutoff_day}
+    save_daily_game_activity(activity)
+
+
+def is_customer_allowed_early_game(message, now: datetime | None = None) -> bool:
+    current_time = now or datetime.now(BOT_TIMEZONE)
+    if current_time.time() >= EARLY_GAME_ACCESS_END:
+        return True
+
+    user_id = parse_chat_id(getattr(getattr(message, "from_user", None), "id", None))
+    if user_id is None:
+        return True
+
+    previous_day = (current_time - timedelta(days=1)).date().isoformat()
+    return str(user_id) in load_daily_game_activity().get(previous_day, {})
+
+
 def load_vip_user_ids() -> set[int]:
     """Load customer IDs that receive the VIP Game OK confirmation."""
     if not VIP_USERS_FILE.exists():
@@ -468,6 +536,21 @@ class BlockedUserFilter(filters.MessageFilter):
 
 
 BLOCKED_USER_FILTER = BlockedUserFilter()
+
+
+class EarlyGameAccessFilter(filters.MessageFilter):
+    """Match only early-morning number games that need the previous-day check."""
+
+    def filter(self, message) -> bool:
+        text = str(getattr(message, "text", "") or "").strip()
+        return bool(
+            text
+            and datetime.now(BOT_TIMEZONE).time() < EARLY_GAME_ACCESS_END
+            and looks_like_game_message(text)
+        )
+
+
+EARLY_GAME_ACCESS_FILTER = EarlyGameAccessFilter()
 
 
 def clear_control_panel_for_message(message) -> None:
@@ -1683,13 +1766,21 @@ async def ensure_control_panel(update: Update, context: ContextTypes.DEFAULT_TYP
     if not force and not should_show_quick_actions(message):
         return
 
-    await send_with_retry(
+    keyboard_message = await send_with_retry(
         context.bot.send_message,
         chat_id=message.chat_id,
-        text="Menu",
-        reply_markup=build_menu_button_markup(),
-        reply_to_message_id=message.message_id,
+        text="\u200b",
+        reply_markup=build_main_menu_keyboard(),
         **get_business_kwargs(update),
+    )
+    context.application.create_task(
+        delete_bot_message_after_delay(
+            context.bot,
+            message.chat_id,
+            keyboard_message.message_id,
+            1,
+        ),
+        update=update,
     )
     mark_quick_actions_sent(message)
 
@@ -2238,6 +2329,25 @@ async def handle_meetup_qr_only_group(update: Update, context: ContextTypes.DEFA
         raise ApplicationHandlerStop
 
     # Never allow menus, rules, videos, approvals, or other replies in Meetup.
+    raise ApplicationHandlerStop
+
+
+async def enforce_early_game_access(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Reject an early game unless the customer played during the prior afternoon/evening."""
+    message = get_update_message(update)
+    if message is None:
+        return
+
+    if is_blocked_user(getattr(getattr(message, "from_user", None), "id", None)):
+        raise ApplicationHandlerStop
+
+    if is_meetup_qr_only_chat(getattr(message, "chat_id", None)) or is_configured_target_group(getattr(message, "chat_id", None)):
+        return
+
+    if is_customer_allowed_early_game(message):
+        return
+
+    await reply_text(update, context, EARLY_GAME_NOT_ALLOWED_TEXT, parse_mode="Markdown")
     raise ApplicationHandlerStop
 
 
@@ -3355,6 +3465,7 @@ async def remember_recent_game_message(update: Update, context: ContextTypes.DEF
     is_game_text = looks_like_game_message(text)
 
     if is_game_text:
+        record_daytime_game_activity(message)
         memory = load_chat_memory()
         chat_key = str(message.chat_id)
         existing_messages = get_recent_game_messages(memory, message.chat_id, limit=9)
@@ -3399,6 +3510,7 @@ def main() -> None:
 
     application.add_handler(TypeHandler(Update, log_incoming_update), group=-3)
     application.add_handler(MessageHandler(filters.ALL, handle_meetup_qr_only_group), group=-2)
+    application.add_handler(MessageHandler(EARLY_GAME_ACCESS_FILTER, enforce_early_game_access), group=-1)
     application.add_handler(CommandHandler("blockuser", block_user), group=0)
     application.add_handler(CommandHandler("unblockuser", unblock_user), group=0)
     application.add_handler(CommandHandler("addvip", add_vip_user), group=0)
