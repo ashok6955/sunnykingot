@@ -2416,6 +2416,9 @@ async def enforce_normal_game_time_window(update: Update, context: ContextTypes.
         return
 
     if await send_normal_time_over_vip_offer(update, context, message):
+        # The time block must not hide the customer's controls. Open the reply
+        # keyboard before stopping later game/approval handlers.
+        await ensure_control_panel(update, context, force=True)
         raise ApplicationHandlerStop
 
 
@@ -3574,6 +3577,7 @@ async def remember_recent_game_message(update: Update, context: ContextTypes.DEF
 
     is_game_text = looks_like_game_message(text)
     has_number = bool(re.search(r"\d", text))
+    is_greeting = bool(re.fullmatch(r"(?i)\s*(?:hi|hello|hii|hlo|hey|namaste)\s*", text))
 
     if is_game_text:
         record_daytime_game_activity(message)
@@ -3589,7 +3593,7 @@ async def remember_recent_game_message(update: Update, context: ContextTypes.DEF
     try:
         clear_control_panel_for_message(message)
         # Any numeric message, including a short number such as "12", opens the menu keyboard.
-        await ensure_control_panel(update, context, force=is_game_text or has_number)
+        await ensure_control_panel(update, context, force=is_game_text or has_number or is_greeting)
         logger.info("MEMORY_HANDLER refreshed control panel chat_id=%s", getattr(message, "chat_id", None))
     except Exception:
         logger.exception("MEMORY_HANDLER could not refresh control panel chat_id=%s", getattr(message, "chat_id", None))
