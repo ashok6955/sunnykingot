@@ -57,6 +57,17 @@ APPROVAL_BLOCK_WINDOWS = (
     (time(23, 55), time(23, 59, 59)),
     (time(0, 0), time(0, 10)),
 )
+# VIP customers use the original, shorter approval pauses above. Normal customers
+# do not receive Game OK / DS OK replies during these longer market windows.
+NORMAL_APPROVAL_BLOCK_WINDOWS = (
+    (time(14, 45), time(15, 20)),
+    (time(16, 20), time(16, 50)),
+    (time(17, 45), time(18, 20)),
+    (time(21, 30), time(22, 10)),
+    (time(23, 30), time(23, 59, 59)),
+    (time(0, 0), time(0, 10)),
+    (time(0, 10), time(4, 0)),
+)
 GAME_OK_TRIGGER_TEXT = "\U0001F3AE GAME OK \u2714\ufe0f\u2714\ufe0f"
 HAPPY_HOURS_PATTERN = r"(?i)\bhappy\s*hour[s]?\b|\bhappy\s*hor[s]?\b|\bhappy\s*hourse\b"
 QUICK_ACTION_CHART = "quick:chart"
@@ -386,6 +397,9 @@ def is_customer_allowed_early_game(message, now: datetime | None = None) -> bool
 
     user_id = parse_chat_id(getattr(getattr(message, "from_user", None), "id", None))
     if user_id is None:
+        return True
+
+    if user_id in load_vip_user_ids():
         return True
 
     previous_day = (current_time - timedelta(days=1)).date().isoformat()
@@ -1128,9 +1142,12 @@ def is_quiet_hours() -> bool:
     return QUIET_HOURS_START <= current_time < QUIET_HOURS_END
 
 
-def is_game_approval_blocked() -> bool:
+def is_game_approval_blocked(message=None) -> bool:
+    """Apply the normal or VIP approval schedule to Game OK and DS OK only."""
     current_time = datetime.now(BOT_TIMEZONE).time()
-    for start, end in APPROVAL_BLOCK_WINDOWS:
+    customer_id = get_approval_customer_id(message) if message is not None else None
+    windows = APPROVAL_BLOCK_WINDOWS if customer_id in load_vip_user_ids() else NORMAL_APPROVAL_BLOCK_WINDOWS
+    for start, end in windows:
         if start <= current_time <= end:
             return True
     return False
@@ -2750,10 +2767,10 @@ async def process_game_approval(
     approval_message=None,
     target_notice_text: str | None = None,
 ) -> bool:
-    if is_game_approval_blocked():
+    message = approval_message or get_update_message(update)
+    if is_game_approval_blocked(message):
         return False
 
-    message = approval_message or get_update_message(update)
     source_messages, used_reply_message, reply_message_id = collect_game_source_messages(message)
     source_messages = [text for text in source_messages if text.strip()]
 
@@ -2801,10 +2818,10 @@ async def process_game_approval(
 
 
 async def send_game_ok(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if is_quiet_hours() or is_game_approval_blocked():
+    message = get_update_message(update)
+    if is_quiet_hours() or is_game_approval_blocked(message):
         return
 
-    message = get_update_message(update)
     if not is_exact_game_ok_styled_trigger(str(getattr(message, "text", "") or "")):
         return
 
@@ -2853,10 +2870,10 @@ async def send_game_ok(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 
 async def send_game_ok_verified(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if is_quiet_hours() or is_game_approval_blocked():
+    message = get_update_message(update)
+    if is_quiet_hours() or is_game_approval_blocked(message):
         return
 
-    message = get_update_message(update)
     if is_exact_game_ok_styled_trigger(str(getattr(message, "text", "") or "")):
         return
 
@@ -2896,10 +2913,10 @@ async def send_game_ok_verified(update: Update, context: ContextTypes.DEFAULT_TY
 
 
 async def send_game_ok_plus(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if is_quiet_hours() or is_game_approval_blocked():
+    message = get_update_message(update)
+    if is_quiet_hours() or is_game_approval_blocked(message):
         return
 
-    message = get_update_message(update)
     if not is_game_ok_plus_trigger_text(str(getattr(message, "text", "") or "")):
         return
 
@@ -2946,10 +2963,10 @@ async def send_game_ok_plus(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 
 async def send_game_ok_from_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
-    if is_quiet_hours() or is_game_approval_blocked():
+    callback_message = getattr(getattr(update, "callback_query", None), "message", None)
+    if is_quiet_hours() or is_game_approval_blocked(callback_message):
         return False
 
-    callback_message = getattr(getattr(update, "callback_query", None), "message", None)
     target_group_id = get_game_target_group_id()
     if target_group_id is None:
         await reply_text(
@@ -2997,10 +3014,10 @@ async def handle_game_ok_text(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
 
 async def send_game_ok_manual_banner(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if is_quiet_hours() or is_game_approval_blocked():
+    message = get_update_message(update)
+    if is_quiet_hours() or is_game_approval_blocked(message):
         return
 
-    message = get_update_message(update)
     if not is_exact_game_ok_styled_trigger(str(getattr(message, "text", "") or "")):
         return
 
@@ -3030,10 +3047,10 @@ async def send_game_ok_manual_banner(update: Update, context: ContextTypes.DEFAU
     )
 
 async def send_ds_ok_from_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
-    if is_quiet_hours() or is_game_approval_blocked():
+    callback_message = getattr(getattr(update, "callback_query", None), "message", None)
+    if is_quiet_hours() or is_game_approval_blocked(callback_message):
         return False
 
-    callback_message = getattr(getattr(update, "callback_query", None), "message", None)
     target_group_id = get_target_group_id()
     if target_group_id is None:
         await reply_text(
@@ -3089,10 +3106,10 @@ async def send_ds_ok_from_button(update: Update, context: ContextTypes.DEFAULT_T
 
 
 async def send_ds_ok_banner(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if is_quiet_hours() or is_game_approval_blocked():
+    message = get_update_message(update)
+    if is_quiet_hours() or is_game_approval_blocked(message):
         return
 
-    message = get_update_message(update)
     logger.info(
         "DS_OK trigger matched chat_id=%s text=%r",
         getattr(message, "chat_id", None),
@@ -3120,7 +3137,8 @@ async def send_ds_ok_banner(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 
 async def send_ds_ok(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if is_quiet_hours() or is_game_approval_blocked():
+    message = get_update_message(update)
+    if is_quiet_hours() or is_game_approval_blocked(message):
         return
 
     target_group_id = get_target_group_id()
@@ -3133,7 +3151,6 @@ async def send_ds_ok(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         )
         return
 
-    message = get_update_message(update)
     source_messages, used_reply_message, reply_message_id = collect_game_source_messages(message)
     source_messages = [text for text in source_messages if text.strip()]
 
