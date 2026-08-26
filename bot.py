@@ -579,7 +579,11 @@ class NormalGameTimeWindowFilter(filters.MessageFilter):
 
     def filter(self, message) -> bool:
         text = str(getattr(message, "text", "") or "").strip()
-        return bool(text and looks_like_game_message(text) and is_in_time_windows(NORMAL_APPROVAL_BLOCK_WINDOWS))
+        # Customers often send a single jodi such as "12" as their game. Treat
+        # any numeric game entry as a game here so the normal-user time rule
+        # cannot be bypassed simply because there is only one number.
+        is_game_or_number = looks_like_game_message(text) or bool(re.search(r"\d", text))
+        return bool(text and is_game_or_number and is_in_time_windows(NORMAL_APPROVAL_BLOCK_WINDOWS))
 
 
 NORMAL_GAME_TIME_WINDOW_FILTER = NormalGameTimeWindowFilter()
