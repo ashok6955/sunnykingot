@@ -1725,7 +1725,7 @@ def build_main_menu_keyboard() -> ReplyKeyboardMarkup:
     """Keep common actions in Telegram's bottom keyboard instead of cluttering chat history."""
     return ReplyKeyboardMarkup(
         [
-            [KeyboardButton("Menu ke liye dabaye")],
+            [KeyboardButton("☰ Main Menu")],
             [KeyboardButton("📜 Rules"), KeyboardButton("📊 Chart"), KeyboardButton("🔳 QR")],
             [KeyboardButton("🎮 Game OK"), KeyboardButton("✅ DS OK")],
             [KeyboardButton("👑 VIP+"), KeyboardButton("⚙️ Advance")],
@@ -2416,9 +2416,15 @@ async def enforce_normal_game_time_window(update: Update, context: ContextTypes.
         return
 
     if await send_normal_time_over_vip_offer(update, context, message):
-        # The time block must not hide the customer's controls. Open the reply
-        # keyboard before stopping later game/approval handlers.
-        await ensure_control_panel(update, context, force=True)
+        # A visible menu message keeps the keyboard available after Time Over.
+        # Do not use the usual short-lived hidden keyboard prompt in this flow.
+        await reply_text(
+            update,
+            context,
+            "☰ Main Menu",
+            reply_markup=build_main_menu_keyboard(),
+        )
+        mark_quick_actions_sent(message)
         raise ApplicationHandlerStop
 
 
@@ -3676,7 +3682,7 @@ def main() -> None:
     application.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"(?i)^\s*(?:👑\s*)?vip\+?\s*$"), send_vip_plus_info))
     application.add_handler(
         MessageHandler(
-            filters.TEXT & filters.Regex(r"(?i)^\s*(?:menu\s+ke\s+liye\s+dabaye|menu)\s*$"),
+            filters.TEXT & filters.Regex(r"(?i)^\s*(?:(?:☰\s*)?(?:main\s+)?menu|menu\s+ke\s+liye\s+dabaye)\s*$"),
             show_main_menu,
         )
     )
