@@ -62,8 +62,8 @@ APPROVAL_BLOCK_WINDOWS = (
 # do not receive Game OK / DS OK replies during these longer market windows.
 NORMAL_APPROVAL_BLOCK_WINDOWS = (
     (time(14, 45), time(15, 20)),
-    (time(16, 20), time(16, 50)),
-    (time(17, 45), time(18, 20)),
+    (time(16, 25), time(16, 50)),
+    (time(17, 50), time(18, 20)),
     (time(21, 30), time(22, 10)),
     (time(23, 30), time(23, 59, 59)),
     (time(0, 0), time(0, 10)),
