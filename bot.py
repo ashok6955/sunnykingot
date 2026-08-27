@@ -2855,12 +2855,13 @@ async def process_game_approval(
     approval_message=None,
     target_notice_text: str | None = None,
     customer_id: int | None = None,
+    allow_during_approval_block: bool = False,
 ) -> bool:
     message = approval_message or get_update_message(update)
     if customer_id is None:
         customer_id = get_approval_customer_id(message)
 
-    if is_game_approval_blocked(message, customer_id=customer_id):
+    if not allow_during_approval_block and is_game_approval_blocked(message, customer_id=customer_id):
         await send_normal_time_over_vip_offer(update, context, message, customer_id=customer_id)
         return False
 
@@ -3163,9 +3164,6 @@ async def send_ds_ok_from_button(update: Update, context: ContextTypes.DEFAULT_T
     customer_id = parse_chat_id(getattr(getattr(query, "from_user", None), "id", None))
     if is_quiet_hours():
         return False
-    if is_game_approval_blocked(callback_message, customer_id=customer_id):
-        await send_normal_time_over_vip_offer(update, context, callback_message, customer_id=customer_id)
-        return False
 
     target_group_id = get_target_group_id()
     if target_group_id is None:
@@ -3187,6 +3185,7 @@ async def send_ds_ok_from_button(update: Update, context: ContextTypes.DEFAULT_T
         require_payment_verification=True,
         approval_message=callback_message,
         customer_id=customer_id,
+        allow_during_approval_block=True,
     )
     return
 
@@ -3226,9 +3225,6 @@ async def send_ds_ok_banner(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     message = get_update_message(update)
     if is_quiet_hours():
         return
-    if is_game_approval_blocked(message):
-        await send_normal_time_over_vip_offer(update, context, message)
-        return
 
     logger.info(
         "DS_OK trigger matched chat_id=%s text=%r",
@@ -3253,15 +3249,13 @@ async def send_ds_ok_banner(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         success_text=get_ds_ok_success_text(message),
         no_message_text="Koi recent game message nahi mila. Pehle number wale game message bhejo ya unme se kisi message par reply karke `ds ok` likho.",
         invalid_message_text="Recent saved message game format me nahi mila. Number wala game message bhejo ya game message par reply karke `ds ok` likho.",
+        allow_during_approval_block=True,
     )
 
 
 async def send_ds_ok(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message = get_update_message(update)
     if is_quiet_hours():
-        return
-    if is_game_approval_blocked(message):
-        await send_normal_time_over_vip_offer(update, context, message)
         return
 
     target_group_id = get_target_group_id()
@@ -3296,16 +3290,15 @@ async def send_ds_ok(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         )
         return
 
-    await reply_text(update, context, get_ds_ok_success_text(message))
-    for source_text in source_messages:
-        await send_with_retry(context.bot.send_message, chat_id=target_group_id, text=source_text)
-
-    if not used_reply_message:
-        memory = load_chat_memory()
-        chat_key = str(message.chat_id)
-        if chat_key in memory:
-            del memory[chat_key]
-            save_chat_memory(memory)
+    await process_game_approval(
+        update,
+        context,
+        target_group_id=target_group_id,
+        success_text=get_ds_ok_success_text(message),
+        no_message_text="Koi recent game message nahi mila. Pehle number wale game message bhejo ya unme se kisi message par reply karke `ds ok` likho.",
+        invalid_message_text="Recent saved message game format me nahi mila. Number wala game message bhejo ya game message par reply karke `ds ok` likho.",
+        allow_during_approval_block=True,
+    )
 
 
 async def handle_quick_action_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
