@@ -591,6 +591,10 @@ class NormalGameTimeWindowFilter(filters.MessageFilter):
 
     def filter(self, message) -> bool:
         text = str(getattr(message, "text", "") or "").strip()
+        # DS OK is an approval command, not a new normal game. It must reach
+        # the DS flow even when the customer includes a number with the command.
+        if is_ds_ok_trigger_text(text):
+            return False
         # Customers often send a single jodi such as "12" as their game. Treat
         # any numeric game entry as a game here so the normal-user time rule
         # cannot be bypassed simply because there is only one number.
