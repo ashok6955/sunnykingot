@@ -693,7 +693,12 @@ def build_button_session_key(message) -> str:
 def should_show_quick_actions(message, now: datetime | None = None) -> bool:
     session_key = build_button_session_key(message)
     state = load_button_session_state()
-    last_sent_at = parse_iso_datetime(state.get(session_key, ""))
+    saved_value = state.get(session_key, "")
+    # Older sessions only recorded an inline prompt. Re-open the real bottom
+    # keyboard once for those chats, then keep using the normal 30-minute gap.
+    if not saved_value.startswith("keyboard:"):
+        return True
+    last_sent_at = parse_iso_datetime(saved_value.removeprefix("keyboard:"))
     current_time = now or datetime.now(BOT_TIMEZONE)
     if last_sent_at is None:
         return True
@@ -704,7 +709,7 @@ def mark_quick_actions_sent(message, now: datetime | None = None) -> None:
     session_key = build_button_session_key(message)
     state = load_button_session_state()
     sent_at = (now or datetime.now(BOT_TIMEZONE)).astimezone(BOT_TIMEZONE).isoformat()
-    state[session_key] = sent_at
+    state[session_key] = f"keyboard:{sent_at}"
     save_button_session_state(state)
 
 
@@ -2431,13 +2436,12 @@ async def enforce_normal_game_time_window(update: Update, context: ContextTypes.
         return
 
     if await send_normal_time_over_vip_offer(update, context, message):
-        # A visible menu message keeps the keyboard available after Time Over.
-        # Do not use the usual short-lived hidden keyboard prompt in this flow.
+        # Keep the physical bottom keyboard available after a time-over reply.
         await reply_text(
             update,
             context,
-            "☰ Main Menu खोलने के लिए नीचे button दबाएं।",
-            reply_markup=build_menu_button_markup(),
+            "☰ Main Menu नीचे keyboard में खुल गया है।",
+            reply_markup=build_main_menu_keyboard(),
         )
         mark_quick_actions_sent(message)
         raise ApplicationHandlerStop
