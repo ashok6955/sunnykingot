@@ -1731,14 +1731,14 @@ def build_control_panel_text(message) -> str:
 
 
 def build_game_quick_actions_markup(message) -> InlineKeyboardMarkup:
+    """Clickable customer actions shown after a game/number message."""
+    del message
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("Rules dekhne ke liye dabaye", callback_data=QUICK_ACTION_RULES)],
-        [InlineKeyboardButton("Chart dekhne ke liye dabaye", callback_data=QUICK_ACTION_CHART)],
-        [InlineKeyboardButton("QR lene ke liye dabaye", callback_data=QUICK_ACTION_QR)],
-        [InlineKeyboardButton("Game OK ke liye dabaye", callback_data=QUICK_ACTION_GAME_OK)],
-        [InlineKeyboardButton("DS OK ke liye dabaye", callback_data=QUICK_ACTION_DS_OK)],
+        [InlineKeyboardButton("📜 Rules", callback_data=QUICK_ACTION_RULES), InlineKeyboardButton("📊 Chart", callback_data=QUICK_ACTION_CHART)],
+        [InlineKeyboardButton("🔳 QR", callback_data=QUICK_ACTION_QR)],
+        [InlineKeyboardButton("🎮 Game OK", callback_data=QUICK_ACTION_GAME_OK), InlineKeyboardButton("✅ DS OK", callback_data=QUICK_ACTION_DS_OK)],
         [InlineKeyboardButton("👑 VIP+", callback_data=QUICK_ACTION_VIP_PLUS)],
-        [InlineKeyboardButton("Advance", callback_data=QUICK_ACTION_ADVANCE)],
+        [InlineKeyboardButton("⚙️ Advance", callback_data=QUICK_ACTION_ADVANCE)],
     ])
 
 
@@ -1846,12 +1846,19 @@ async def ensure_control_panel(update: Update, context: ContextTypes.DEFAULT_TYP
     if not should_show_quick_actions(message):
         return
 
-    await send_with_retry(
-        context.bot.send_message,
-        chat_id=message.chat_id,
-        text="☰ Main Menu नीचे keyboard में खुल गया है।",
+    # The inline panel gives customers immediate tap actions. The persistent
+    # reply keyboard remains available for customers who prefer the bottom menu.
+    await reply_text(
+        update,
+        context,
+        "☰ Menu: अपना option दबाएं।",
+        reply_markup=build_game_quick_actions_markup(message),
+    )
+    await reply_text(
+        update,
+        context,
+        "Main Menu नीचे keyboard में भी खुल गया है।",
         reply_markup=build_main_menu_keyboard(),
-        **get_business_kwargs(update),
     )
     mark_quick_actions_sent(message)
 
@@ -2419,6 +2426,19 @@ async def enforce_early_game_access(update: Update, context: ContextTypes.DEFAUL
         return
 
     await reply_text(update, context, EARLY_GAME_NOT_ALLOWED_TEXT, parse_mode="Markdown")
+    await reply_text(
+        update,
+        context,
+        "☰ Menu: अपना option दबाएं।",
+        reply_markup=build_game_quick_actions_markup(message),
+    )
+    await reply_text(
+        update,
+        context,
+        "Main Menu नीचे keyboard में भी खुल गया है।",
+        reply_markup=build_main_menu_keyboard(),
+    )
+    mark_quick_actions_sent(message)
     raise ApplicationHandlerStop
 
 
@@ -2436,11 +2456,17 @@ async def enforce_normal_game_time_window(update: Update, context: ContextTypes.
         return
 
     if await send_normal_time_over_vip_offer(update, context, message):
-        # Keep the physical bottom keyboard available after a time-over reply.
+        # Keep both direct-tap actions and the physical keyboard usable.
         await reply_text(
             update,
             context,
-            "☰ Main Menu नीचे keyboard में खुल गया है।",
+            "☰ Menu: अपना option दबाएं।",
+            reply_markup=build_game_quick_actions_markup(message),
+        )
+        await reply_text(
+            update,
+            context,
+            "Main Menu नीचे keyboard में भी खुल गया है।",
             reply_markup=build_main_menu_keyboard(),
         )
         mark_quick_actions_sent(message)
