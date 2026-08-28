@@ -408,12 +408,16 @@ def record_daytime_game_activity(message, now: datetime | None = None, customer_
     save_daily_game_activity(activity)
 
 
-def is_customer_allowed_early_game(message, now: datetime | None = None) -> bool:
+def is_customer_allowed_early_game(
+    message,
+    now: datetime | None = None,
+    customer_id: int | None = None,
+) -> bool:
     current_time = now or datetime.now(BOT_TIMEZONE)
     if current_time.time() >= EARLY_GAME_ACCESS_END:
         return True
 
-    user_id = parse_chat_id(getattr(getattr(message, "from_user", None), "id", None))
+    user_id = customer_id or parse_chat_id(getattr(getattr(message, "from_user", None), "id", None))
     if user_id is None:
         return True
 
@@ -1824,7 +1828,7 @@ async def send_rules_book(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     await send_welcome_video(update, context)
 
 
-async def ensure_control_panel(update: Update, context: ContextTypes.DEFAULT_TYPE, *, force: bool = False) -> None:
+async def ensure_control_panel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message = get_update_message(update)
     if is_meetup_qr_only_chat(getattr(message, "chat_id", None)):
         logger.info("CONTROL_PANEL skipped Meetup QR-only chat_id=%s", getattr(message, "chat_id", None))
@@ -1834,14 +1838,14 @@ async def ensure_control_panel(update: Update, context: ContextTypes.DEFAULT_TYP
         logger.info("CONTROL_PANEL skipped configured target group chat_id=%s", getattr(message, "chat_id", None))
         return
 
-    if not force and not should_show_quick_actions(message):
+    if not should_show_quick_actions(message):
         return
 
     await send_with_retry(
         context.bot.send_message,
         chat_id=message.chat_id,
-        text="☰ Main Menu खोलने के लिए नीचे button दबाएं।",
-        reply_markup=build_menu_button_markup(),
+        text="☰ Main Menu नीचे keyboard में खुल गया है।",
+        reply_markup=build_main_menu_keyboard(),
         **get_business_kwargs(update),
     )
     mark_quick_actions_sent(message)
@@ -2860,10 +2864,18 @@ async def process_game_approval(
     target_notice_text: str | None = None,
     customer_id: int | None = None,
     allow_during_approval_block: bool = False,
+    require_previous_day_activity: bool = False,
 ) -> bool:
     message = approval_message or get_update_message(update)
     if customer_id is None:
         customer_id = get_approval_customer_id(message)
+
+    if require_previous_day_activity and not is_customer_allowed_early_game(
+        message,
+        customer_id=customer_id,
+    ):
+        await reply_text(update, context, EARLY_GAME_NOT_ALLOWED_TEXT, parse_mode="Markdown")
+        return False
 
     if not allow_during_approval_block and is_game_approval_blocked(message, customer_id=customer_id):
         await send_normal_time_over_vip_offer(update, context, message, customer_id=customer_id)
@@ -3190,6 +3202,7 @@ async def send_ds_ok_from_button(update: Update, context: ContextTypes.DEFAULT_T
         approval_message=callback_message,
         customer_id=customer_id,
         allow_during_approval_block=True,
+        require_previous_day_activity=True,
     )
     return
 
@@ -3254,6 +3267,7 @@ async def send_ds_ok_banner(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         no_message_text="Koi recent game message nahi mila. Pehle number wale game message bhejo ya unme se kisi message par reply karke `ds ok` likho.",
         invalid_message_text="Recent saved message game format me nahi mila. Number wala game message bhejo ya game message par reply karke `ds ok` likho.",
         allow_during_approval_block=True,
+        require_previous_day_activity=True,
     )
 
 
@@ -3302,6 +3316,7 @@ async def send_ds_ok(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         no_message_text="Koi recent game message nahi mila. Pehle number wale game message bhejo ya unme se kisi message par reply karke `ds ok` likho.",
         invalid_message_text="Recent saved message game format me nahi mila. Number wala game message bhejo ya game message par reply karke `ds ok` likho.",
         allow_during_approval_block=True,
+        require_previous_day_activity=True,
     )
 
 
@@ -3611,8 +3626,6 @@ async def remember_recent_game_message(update: Update, context: ContextTypes.DEF
         return
 
     is_game_text = looks_like_game_message(text)
-    has_number = bool(re.search(r"\d", text))
-    is_greeting = bool(re.fullmatch(r"(?i)\s*(?:hi|hello|hii|hlo|hey|namaste)\s*", text))
 
     if is_game_text:
         record_daytime_game_activity(message)
@@ -3627,8 +3640,8 @@ async def remember_recent_game_message(update: Update, context: ContextTypes.DEF
 
     try:
         clear_control_panel_for_message(message)
-        # Any numeric message, including a short number such as "12", opens the menu keyboard.
-        await ensure_control_panel(update, context, force=is_game_text or has_number or is_greeting)
+        # The bottom menu is rate-limited per chat so normal messages do not spam it.
+        await ensure_control_panel(update, context)
         logger.info("MEMORY_HANDLER refreshed control panel chat_id=%s", getattr(message, "chat_id", None))
     except Exception:
         logger.exception("MEMORY_HANDLER could not refresh control panel chat_id=%s", getattr(message, "chat_id", None))
@@ -3660,8 +3673,9 @@ def main() -> None:
 
     application.add_handler(TypeHandler(Update, log_incoming_update), group=-3)
     application.add_handler(MessageHandler(filters.ALL, handle_meetup_qr_only_group), group=-2)
-    application.add_handler(MessageHandler(NORMAL_GAME_TIME_WINDOW_FILTER, enforce_normal_game_time_window), group=-1)
     application.add_handler(MessageHandler(EARLY_GAME_ACCESS_FILTER, enforce_early_game_access), group=-1)
+    # Early-morning permission takes priority over the normal time-over offer.
+    application.add_handler(MessageHandler(NORMAL_GAME_TIME_WINDOW_FILTER, enforce_normal_game_time_window), group=-1)
     application.add_handler(CommandHandler("blockuser", block_user), group=0)
     application.add_handler(CommandHandler("unblockuser", unblock_user), group=0)
     application.add_handler(CommandHandler("addvip", add_vip_user), group=0)
