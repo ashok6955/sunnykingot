@@ -1866,12 +1866,12 @@ async def send_customer_action_menus(
     if not should_show_quick_actions(message):
         return
 
-    # Telegram requires a message for inline buttons. Use an invisible marker
-    # so the customer sees the actions without an explanatory text bubble.
+    # Telegram requires non-empty text for inline buttons. A Braille blank is
+    # visually minimal while Telegram still accepts the button-only panel.
     await send_with_retry(
         context.bot.send_message,
         chat_id=message.chat_id,
-        text="\u200b",
+        text="\u2800",
         reply_markup=build_game_quick_actions_markup(message),
         **get_business_kwargs(update),
     )
@@ -1879,7 +1879,7 @@ async def send_customer_action_menus(
     keyboard_prompt = await send_with_retry(
         context.bot.send_message,
         chat_id=message.chat_id,
-        text="\u200b",
+        text="\u2800",
         reply_markup=build_main_menu_keyboard(),
         **get_business_kwargs(update),
     )
@@ -2402,7 +2402,7 @@ async def show_meetup_qr_keyboard(update: Update, context: ContextTypes.DEFAULT_
     sent_control = await send_with_retry(
         context.bot.send_message,
         chat_id=message.chat_id,
-        text="\u200b",
+        text="\u2800",
         reply_markup=build_meetup_qr_keyboard(),
         **get_business_kwargs(update),
     )
