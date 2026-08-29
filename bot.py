@@ -1858,19 +1858,31 @@ async def send_customer_action_menus(
     if not should_show_quick_actions(message):
         return
 
-    # The inline panel gives customers immediate tap actions. The persistent
-    # reply keyboard remains available for customers who prefer the bottom menu.
-    await reply_text(
-        update,
-        context,
-        "☰ Menu: अपना option दबाएं।",
+    # Telegram requires a message for inline buttons. Use an invisible marker
+    # so the customer sees the actions without an explanatory text bubble.
+    await send_with_retry(
+        context.bot.send_message,
+        chat_id=message.chat_id,
+        text="\u200b",
         reply_markup=build_game_quick_actions_markup(message),
+        **get_business_kwargs(update),
     )
-    await reply_text(
-        update,
-        context,
-        "Main Menu नीचे keyboard में भी खुल गया है।",
+    # The reply keyboard stays after this temporary message is removed.
+    keyboard_prompt = await send_with_retry(
+        context.bot.send_message,
+        chat_id=message.chat_id,
+        text="\u200b",
         reply_markup=build_main_menu_keyboard(),
+        **get_business_kwargs(update),
+    )
+    context.application.create_task(
+        delete_bot_message_after_delay(
+            context.bot,
+            message.chat_id,
+            keyboard_prompt.message_id,
+            1,
+        ),
+        update=update,
     )
     mark_quick_actions_sent(message)
 
