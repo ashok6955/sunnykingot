@@ -552,13 +552,26 @@ async def delete_meetup_qr_controls_after_delay(context: ContextTypes.DEFAULT_TY
             logger.exception("Could not delete Meetup QR control message_id=%s", message_id)
 
 
-async def delete_bot_message_after_delay(bot, chat_id: int, message_id: int, delay_seconds: float) -> None:
-    """Remove the temporary message used only to make Telegram show a reply keyboard."""
+async def delete_bot_message_after_delay(
+    bot,
+    chat_id: int,
+    message_id: int,
+    delay_seconds: float,
+    *,
+    business_connection_id: str | None = None,
+) -> None:
+    """Delete a temporary or promotional bot message after a delay."""
     await asyncio.sleep(delay_seconds)
     try:
-        await send_with_retry(bot.delete_message, chat_id=chat_id, message_id=message_id)
+        delete_kwargs = {"business_connection_id": business_connection_id} if business_connection_id else {}
+        await send_with_retry(
+            bot.delete_message,
+            chat_id=chat_id,
+            message_id=message_id,
+            **delete_kwargs,
+        )
     except Exception:
-        logger.exception("Could not delete temporary keyboard message_id=%s", message_id)
+        logger.exception("Could not delete scheduled bot message_id=%s", message_id)
 
 
 def is_blocked_user(user_id: int | str | None) -> bool:
@@ -1913,6 +1926,7 @@ async def send_customer_action_menus(
             message.chat_id,
             keyboard_prompt.message_id,
             1,
+            business_connection_id=getattr(message, "business_connection_id", None),
         ),
         update=update,
     )
@@ -2436,6 +2450,7 @@ async def show_meetup_qr_keyboard(update: Update, context: ContextTypes.DEFAULT_
             message.chat_id,
             sent_control.message_id,
             1,
+            business_connection_id=getattr(message, "business_connection_id", None),
         ),
         update=update,
     )
@@ -2552,6 +2567,7 @@ async def send_normal_time_over_vip_offer(
                 message.chat_id,
                 sent_message.message_id,
                 30 * 60,
+                business_connection_id=getattr(message, "business_connection_id", None),
             ),
             update=update,
         )
