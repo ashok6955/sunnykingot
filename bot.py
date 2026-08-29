@@ -1220,6 +1220,20 @@ def is_game_approval_blocked(message=None, *, customer_id: int | None = None) ->
     return is_in_time_windows(windows)
 
 
+def can_allow_overnight_game_approval(message, *, customer_id: int | None = None) -> bool:
+    """Let an active normal customer approve games during the overnight window."""
+    if customer_id is None:
+        customer_id = get_approval_customer_id(message)
+    if customer_id is None or customer_id in load_vip_user_ids():
+        return False
+
+    overnight_window = ((time(0, 10), time(4, 0)),)
+    return is_in_time_windows(overnight_window) and is_customer_allowed_early_game(
+        message,
+        customer_id=customer_id,
+    )
+
+
 async def send_with_retry(send_callable, *args, retries: int = 2, retry_delay: float = 1.0, **kwargs):
     last_error = None
     for attempt in range(retries + 1):
@@ -3061,7 +3075,12 @@ async def send_game_ok_verified(update: Update, context: ContextTypes.DEFAULT_TY
     message = get_update_message(update)
     if is_quiet_hours():
         return
-    if is_game_approval_blocked(message):
+    customer_id = get_approval_customer_id(message)
+    allow_overnight_approval = can_allow_overnight_game_approval(
+        message,
+        customer_id=customer_id,
+    )
+    if is_game_approval_blocked(message, customer_id=customer_id) and not allow_overnight_approval:
         await send_normal_time_over_vip_offer(update, context, message)
         return
 
@@ -3100,6 +3119,9 @@ async def send_game_ok_verified(update: Update, context: ContextTypes.DEFAULT_TY
         no_message_text=f"Koi recent game message nahi mila. Pehle number wale game message bhejo ya unme se kisi message par reply karke `{GAME_OK_TRIGGER_TEXT}` likho.",
         invalid_message_text=f"Recent saved message game format me nahi mila. Number wala game message bhejo ya game message par reply karke `{GAME_OK_TRIGGER_TEXT}` likho.",
         require_payment_verification=True,
+        customer_id=customer_id,
+        allow_during_approval_block=allow_overnight_approval,
+        require_previous_day_activity=allow_overnight_approval,
     )
 
 
@@ -3107,7 +3129,11 @@ async def send_game_ok_plus(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     message = get_update_message(update)
     if is_quiet_hours():
         return
-    if is_game_approval_blocked(message):
+    customer_id = get_approval_customer_id(message)
+    if is_game_approval_blocked(message, customer_id=customer_id) and not can_allow_overnight_game_approval(
+        message,
+        customer_id=customer_id,
+    ):
         await send_normal_time_over_vip_offer(update, context, message)
         return
 
@@ -3168,7 +3194,11 @@ async def send_game_ok_from_button(
         customer_id = parse_chat_id(getattr(getattr(query, "from_user", None), "id", None))
     if is_quiet_hours():
         return False
-    if is_game_approval_blocked(callback_message, customer_id=customer_id):
+    allow_overnight_approval = can_allow_overnight_game_approval(
+        callback_message,
+        customer_id=customer_id,
+    )
+    if is_game_approval_blocked(callback_message, customer_id=customer_id) and not allow_overnight_approval:
         await send_normal_time_over_vip_offer(update, context, callback_message, customer_id=customer_id)
         return False
 
@@ -3192,6 +3222,8 @@ async def send_game_ok_from_button(
         invalid_message_text=f"Recent saved message game format me nahi mila. Number wala game message bhejo ya game message par reply karke `{GAME_OK_TRIGGER_TEXT}` likho.",
         approval_message=callback_message,
         customer_id=customer_id,
+        allow_during_approval_block=allow_overnight_approval,
+        require_previous_day_activity=allow_overnight_approval,
     )
 
 async def handle_game_ok_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -3223,7 +3255,12 @@ async def send_game_ok_manual_banner(update: Update, context: ContextTypes.DEFAU
     message = get_update_message(update)
     if is_quiet_hours():
         return
-    if is_game_approval_blocked(message):
+    customer_id = get_approval_customer_id(message)
+    allow_overnight_approval = can_allow_overnight_game_approval(
+        message,
+        customer_id=customer_id,
+    )
+    if is_game_approval_blocked(message, customer_id=customer_id) and not allow_overnight_approval:
         await send_normal_time_over_vip_offer(update, context, message)
         return
 
@@ -3253,6 +3290,9 @@ async def send_game_ok_manual_banner(update: Update, context: ContextTypes.DEFAU
         no_message_text=f"Koi recent game message nahi mila. Pehle number wale game message bhejo ya unme se kisi message par reply karke `{GAME_OK_TRIGGER_TEXT}` likho.",
         invalid_message_text=f"Recent saved message game format me nahi mila. Number wala game message bhejo ya game message par reply karke `{GAME_OK_TRIGGER_TEXT}` likho.",
         target_notice_text=GAME_OK_TRIGGER_TEXT,
+        customer_id=customer_id,
+        allow_during_approval_block=allow_overnight_approval,
+        require_previous_day_activity=allow_overnight_approval,
     )
 
 async def send_ds_ok_from_button(
