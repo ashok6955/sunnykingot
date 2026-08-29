@@ -132,6 +132,7 @@ VIP_PLUS_INFO_TEXT = (
     "✅ Telegram Support\n"
     "✅ Direct On-Call Support\n"
     "✅ On-Time Payment\n"
+    "✅ Hand 2 Hand Payment\n"
     "✅ *1000 तक का रेट*\n\n"
     "💬 *VIP+ लेने के लिए Private Message करें*\n"
     "🚀 *Join करो अभी!*\n\n"
