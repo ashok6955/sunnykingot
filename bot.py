@@ -2497,8 +2497,32 @@ async def send_normal_time_over_vip_offer(
     if not is_in_time_windows(NORMAL_APPROVAL_BLOCK_WINDOWS):
         return False
 
-    await reply_text(update, context, TIME_OVER_VIP_PLUS_TEXT, parse_mode="Markdown")
-    await reply_text(update, context, VIP_PLUS_INFO_TEXT, parse_mode="Markdown")
+    business_kwargs = get_business_kwargs(update)
+    time_over_message = await send_with_retry(
+        context.bot.send_message,
+        chat_id=message.chat_id,
+        text=TIME_OVER_VIP_PLUS_TEXT,
+        parse_mode="Markdown",
+        **business_kwargs,
+    )
+    vip_offer_message = await send_with_retry(
+        context.bot.send_message,
+        chat_id=message.chat_id,
+        text=VIP_PLUS_INFO_TEXT,
+        parse_mode="Markdown",
+        **business_kwargs,
+    )
+    # Promotional time-over notices should not permanently fill customer chats.
+    for sent_message in (time_over_message, vip_offer_message):
+        context.application.create_task(
+            delete_bot_message_after_delay(
+                context.bot,
+                message.chat_id,
+                sent_message.message_id,
+                30 * 60,
+            ),
+            update=update,
+        )
     return True
 
 
