@@ -1846,6 +1846,18 @@ async def ensure_control_panel(update: Update, context: ContextTypes.DEFAULT_TYP
     if not should_show_quick_actions(message):
         return
 
+    await send_customer_action_menus(update, context, message)
+
+
+async def send_customer_action_menus(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    message,
+) -> None:
+    """Show customer actions at most once per configured menu interval."""
+    if not should_show_quick_actions(message):
+        return
+
     # The inline panel gives customers immediate tap actions. The persistent
     # reply keyboard remains available for customers who prefer the bottom menu.
     await reply_text(
@@ -2426,19 +2438,7 @@ async def enforce_early_game_access(update: Update, context: ContextTypes.DEFAUL
         return
 
     await reply_text(update, context, EARLY_GAME_NOT_ALLOWED_TEXT, parse_mode="Markdown")
-    await reply_text(
-        update,
-        context,
-        "☰ Menu: अपना option दबाएं।",
-        reply_markup=build_game_quick_actions_markup(message),
-    )
-    await reply_text(
-        update,
-        context,
-        "Main Menu नीचे keyboard में भी खुल गया है।",
-        reply_markup=build_main_menu_keyboard(),
-    )
-    mark_quick_actions_sent(message)
+    await send_customer_action_menus(update, context, message)
     raise ApplicationHandlerStop
 
 
@@ -2456,20 +2456,8 @@ async def enforce_normal_game_time_window(update: Update, context: ContextTypes.
         return
 
     if await send_normal_time_over_vip_offer(update, context, message):
-        # Keep both direct-tap actions and the physical keyboard usable.
-        await reply_text(
-            update,
-            context,
-            "☰ Menu: अपना option दबाएं।",
-            reply_markup=build_game_quick_actions_markup(message),
-        )
-        await reply_text(
-            update,
-            context,
-            "Main Menu नीचे keyboard में भी खुल गया है।",
-            reply_markup=build_main_menu_keyboard(),
-        )
-        mark_quick_actions_sent(message)
+        # Keep the menu available without repeating it for every blocked game.
+        await send_customer_action_menus(update, context, message)
         raise ApplicationHandlerStop
 
 
