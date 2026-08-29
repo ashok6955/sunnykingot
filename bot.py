@@ -1740,11 +1740,21 @@ def build_control_panel_text(message) -> str:
 
 def build_game_quick_actions_markup(message) -> InlineKeyboardMarkup:
     """Clickable customer actions shown after a game/number message."""
-    del message
+    customer_id = get_approval_customer_id(message)
+
+    def approval_callback_data(action: str) -> str:
+        # In a group, an admin may tap this panel for another customer's game.
+        # Keep the original game sender on the callback instead of using the
+        # admin who tapped it for VIP and early-access checks.
+        return f"{action}:{customer_id}" if customer_id is not None else action
+
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("📜 Rules", callback_data=QUICK_ACTION_RULES), InlineKeyboardButton("📊 Chart", callback_data=QUICK_ACTION_CHART)],
         [InlineKeyboardButton("🔳 QR", callback_data=QUICK_ACTION_QR)],
-        [InlineKeyboardButton("🎮 Game OK", callback_data=QUICK_ACTION_GAME_OK), InlineKeyboardButton("✅ DS OK", callback_data=QUICK_ACTION_DS_OK)],
+        [
+            InlineKeyboardButton("🎮 Game OK", callback_data=approval_callback_data(QUICK_ACTION_GAME_OK)),
+            InlineKeyboardButton("✅ DS OK", callback_data=approval_callback_data(QUICK_ACTION_DS_OK)),
+        ],
         [InlineKeyboardButton("👑 VIP+", callback_data=QUICK_ACTION_VIP_PLUS)],
         [InlineKeyboardButton("⚙️ Advance", callback_data=QUICK_ACTION_ADVANCE)],
     ])
@@ -3146,10 +3156,16 @@ async def send_game_ok_plus(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     record_daytime_game_activity(message, customer_id=get_approval_customer_id(message))
 
 
-async def send_game_ok_from_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+async def send_game_ok_from_button(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    customer_id: int | None = None,
+) -> bool:
     query = getattr(update, "callback_query", None)
     callback_message = getattr(query, "message", None)
-    customer_id = parse_chat_id(getattr(getattr(query, "from_user", None), "id", None))
+    if customer_id is None:
+        customer_id = parse_chat_id(getattr(getattr(query, "from_user", None), "id", None))
     if is_quiet_hours():
         return False
     if is_game_approval_blocked(callback_message, customer_id=customer_id):
@@ -3239,10 +3255,16 @@ async def send_game_ok_manual_banner(update: Update, context: ContextTypes.DEFAU
         target_notice_text=GAME_OK_TRIGGER_TEXT,
     )
 
-async def send_ds_ok_from_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+async def send_ds_ok_from_button(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    customer_id: int | None = None,
+) -> bool:
     query = getattr(update, "callback_query", None)
     callback_message = getattr(query, "message", None)
-    customer_id = parse_chat_id(getattr(getattr(query, "from_user", None), "id", None))
+    if customer_id is None:
+        customer_id = parse_chat_id(getattr(getattr(query, "from_user", None), "id", None))
     if is_quiet_hours():
         return False
 
@@ -3409,7 +3431,15 @@ async def handle_quick_action_callback(update: Update, context: ContextTypes.DEF
         await query.answer("Aapke liye bot access band hai.", show_alert=True)
         return
 
-    action = str(getattr(query, "data", "") or "").strip()
+    raw_action = str(getattr(query, "data", "") or "").strip()
+    action = raw_action
+    approval_customer_id = None
+    action_prefix, separator, customer_id_text = raw_action.rpartition(":")
+    if separator and action_prefix in {QUICK_ACTION_GAME_OK, QUICK_ACTION_DS_OK}:
+        parsed_customer_id = parse_chat_id(customer_id_text)
+        if parsed_customer_id is not None:
+            action = action_prefix
+            approval_customer_id = parsed_customer_id
 
     async def remove_used_menu() -> None:
         """Keep the chat clean once the customer has chosen a menu action."""
@@ -3469,17 +3499,33 @@ async def handle_quick_action_callback(update: Update, context: ContextTypes.DEF
         return
 
     if action == QUICK_ACTION_GAME_OK:
-        logger.info("MENU GAME_OK clicked chat_id=%s", getattr(getattr(query, "message", None), "chat_id", None))
+        logger.info(
+            "MENU GAME_OK clicked chat_id=%s customer_id=%s",
+            getattr(getattr(query, "message", None), "chat_id", None),
+            approval_customer_id,
+        )
         await query.answer()
-        approval_completed = await send_game_ok_from_button(update, context)
+        approval_completed = await send_game_ok_from_button(
+            update,
+            context,
+            customer_id=approval_customer_id,
+        )
         if approval_completed:
             await restore_menu_button()
         return
 
     if action == QUICK_ACTION_DS_OK:
-        logger.info("MENU DS_OK clicked chat_id=%s", getattr(getattr(query, "message", None), "chat_id", None))
+        logger.info(
+            "MENU DS_OK clicked chat_id=%s customer_id=%s",
+            getattr(getattr(query, "message", None), "chat_id", None),
+            approval_customer_id,
+        )
         await query.answer()
-        approval_completed = await send_ds_ok_from_button(update, context)
+        approval_completed = await send_ds_ok_from_button(
+            update,
+            context,
+            customer_id=approval_customer_id,
+        )
         if approval_completed:
             await restore_menu_button()
         return
