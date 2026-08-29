@@ -2499,6 +2499,11 @@ async def enforce_normal_game_time_window(update: Update, context: ContextTypes.
     if is_meetup_qr_only_chat(chat_id) or is_configured_target_group(chat_id):
         return
 
+    # The early-access filter has already validated this active customer.
+    # Do not send a VIP offer again for their valid overnight game entry.
+    if can_allow_overnight_game_approval(message):
+        return
+
     if await send_normal_time_over_vip_offer(update, context, message):
         # A game sent in a regular block window still counts as today's
         # activity, so the customer can use the next early-morning window.
