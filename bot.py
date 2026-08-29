@@ -688,7 +688,14 @@ def save_approval_state(state: dict[str, dict[str, str | list[int]]]) -> None:
 
 
 def build_button_session_key(message) -> str:
-    return f"{getattr(message, 'business_connection_id', '')}:{getattr(message, 'chat_id', '')}"
+    # A group may contain many customers. Keep the menu cooldown per customer,
+    # not per group, so one person's menu never hides another person's buttons.
+    from_user = getattr(message, "from_user", None)
+    user_id = getattr(from_user, "id", "")
+    return (
+        f"{getattr(message, 'business_connection_id', '')}:"
+        f"{getattr(message, 'chat_id', '')}:{user_id}"
+    )
 
 
 def should_show_quick_actions(message, now: datetime | None = None) -> bool:
