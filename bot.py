@@ -563,13 +563,18 @@ async def delete_bot_message_after_delay(
     """Delete a temporary or promotional bot message after a delay."""
     await asyncio.sleep(delay_seconds)
     try:
-        delete_kwargs = {"business_connection_id": business_connection_id} if business_connection_id else {}
-        await send_with_retry(
-            bot.delete_message,
-            chat_id=chat_id,
-            message_id=message_id,
-            **delete_kwargs,
-        )
+        if business_connection_id:
+            await send_with_retry(
+                bot.delete_business_messages,
+                business_connection_id=business_connection_id,
+                message_ids=[message_id],
+            )
+        else:
+            await send_with_retry(
+                bot.delete_message,
+                chat_id=chat_id,
+                message_id=message_id,
+            )
     except Exception:
         logger.exception("Could not delete scheduled bot message_id=%s", message_id)
 
