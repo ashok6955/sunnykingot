@@ -1866,12 +1866,12 @@ async def send_customer_action_menus(
     if not should_show_quick_actions(message):
         return
 
-    # Telegram requires non-empty text for inline buttons. A Braille blank is
-    # visually minimal while Telegram still accepts the button-only panel.
+    # Telegram requires visible non-empty text for inline buttons. Keep the
+    # marker short while the actual controls remain in the attached buttons.
     await send_with_retry(
         context.bot.send_message,
         chat_id=message.chat_id,
-        text="\u2800",
+        text=build_control_panel_text(message),
         reply_markup=build_game_quick_actions_markup(message),
         **get_business_kwargs(update),
     )
@@ -1879,7 +1879,7 @@ async def send_customer_action_menus(
     keyboard_prompt = await send_with_retry(
         context.bot.send_message,
         chat_id=message.chat_id,
-        text="\u2800",
+        text=build_control_panel_text(message),
         reply_markup=build_main_menu_keyboard(),
         **get_business_kwargs(update),
     )
@@ -2402,7 +2402,7 @@ async def show_meetup_qr_keyboard(update: Update, context: ContextTypes.DEFAULT_
     sent_control = await send_with_retry(
         context.bot.send_message,
         chat_id=message.chat_id,
-        text="\u2800",
+        text=build_control_panel_text(message),
         reply_markup=build_meetup_qr_keyboard(),
         **get_business_kwargs(update),
     )
@@ -2476,6 +2476,9 @@ async def enforce_normal_game_time_window(update: Update, context: ContextTypes.
         return
 
     if await send_normal_time_over_vip_offer(update, context, message):
+        # A game sent in a regular block window still counts as today's
+        # activity, so the customer can use the next early-morning window.
+        record_daytime_game_activity(message)
         # Keep the menu available without repeating it for every blocked game.
         await send_customer_action_menus(update, context, message)
         raise ApplicationHandlerStop
