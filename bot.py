@@ -602,7 +602,7 @@ class EarlyGameAccessFilter(filters.MessageFilter):
         return bool(
             text
             and datetime.now(BOT_TIMEZONE).time() < EARLY_GAME_ACCESS_END
-            and looks_like_game_message(text)
+            and is_customer_game_entry(text)
         )
 
 
@@ -618,11 +618,11 @@ class NormalGameTimeWindowFilter(filters.MessageFilter):
         # the DS flow even when the customer includes a number with the command.
         if is_ds_ok_trigger_text(text):
             return False
-        # Customers often send a single jodi such as "12" as their game. Treat
-        # any numeric game entry as a game here so the normal-user time rule
-        # cannot be bypassed simply because there is only one number.
-        is_game_or_number = looks_like_game_message(text) or bool(re.search(r"\d", text))
-        return bool(text and is_game_or_number and is_in_time_windows(NORMAL_APPROVAL_BLOCK_WINDOWS))
+        return bool(
+            text
+            and is_customer_game_entry(text)
+            and is_in_time_windows(NORMAL_APPROVAL_BLOCK_WINDOWS)
+        )
 
 
 NORMAL_GAME_TIME_WINDOW_FILTER = NormalGameTimeWindowFilter()
@@ -1225,6 +1225,16 @@ def is_quiet_hours() -> bool:
     return QUIET_HOURS_START <= current_time < QUIET_HOURS_END
 
 
+def is_customer_game_entry(text: str) -> bool:
+    """Recognize actual game entries without treating every number as a game."""
+    normalized_text = str(text or "").strip()
+    return bool(
+        looks_like_game_message(normalized_text)
+        # A single jodi/panna such as "12" or "123" is also a valid entry.
+        or re.fullmatch(r"\d{1,3}", normalized_text)
+    )
+
+
 def is_in_time_windows(windows, current_time: time | None = None) -> bool:
     current_time = current_time or datetime.now(BOT_TIMEZONE).time()
     return any(start <= current_time <= end for start, end in windows)
@@ -1460,7 +1470,7 @@ def get_ds_ok_success_text(message, *, customer_id: int | None = None) -> str:
 
 def should_relay_group_message(message) -> bool:
     text = str(getattr(message, "text", "") or "").strip()
-    return bool(text and looks_like_game_message(text))
+    return bool(text and is_customer_game_entry(text))
 
 
 def build_relay_header(message) -> str:
@@ -2549,6 +2559,13 @@ async def send_normal_time_over_vip_offer(
     if not is_in_time_windows(NORMAL_APPROVAL_BLOCK_WINDOWS):
         return False
 
+    logger.info(
+        "TIME_OVER sent chat_id=%s customer_id=%s time=%s trigger=%r",
+        getattr(message, "chat_id", None),
+        customer_id,
+        datetime.now(BOT_TIMEZONE).strftime("%H:%M:%S"),
+        str(getattr(message, "text", "") or "")[:100],
+    )
     business_kwargs = get_business_kwargs(update)
     time_over_message = await send_with_retry(
         context.bot.send_message,
@@ -2956,7 +2973,7 @@ def collect_game_source_messages(message) -> tuple[list[str], bool, int | None]:
     reply_to_message = getattr(message, "reply_to_message", None)
     if reply_to_message and getattr(reply_to_message, "text", None):
         source_text = str(reply_to_message.text or "").strip()
-        if source_text and looks_like_game_message(source_text):
+        if source_text and is_customer_game_entry(source_text):
             reply_message_id = parse_chat_id(getattr(reply_to_message, "message_id", None))
             return [source_text], True, reply_message_id
 
@@ -3000,7 +3017,7 @@ async def process_game_approval(
     source_messages = [text for text in source_messages if text.strip()]
 
     if not used_reply_message:
-        initial_invalid_messages = [text for text in source_messages if not looks_like_game_message(text)]
+        initial_invalid_messages = [text for text in source_messages if not is_customer_game_entry(text)]
         if not source_messages or initial_invalid_messages or is_duplicate_approval(message, source_messages, reply_message_id):
             await asyncio.sleep(0.8)
             source_messages, used_reply_message, reply_message_id = collect_game_source_messages(message)
@@ -3010,7 +3027,7 @@ async def process_game_approval(
         await reply_text(update, context, no_message_text, parse_mode="Markdown")
         return False
 
-    invalid_messages = [text for text in source_messages if not looks_like_game_message(text)]
+    invalid_messages = [text for text in source_messages if not is_customer_game_entry(text)]
     if invalid_messages:
         await reply_text(update, context, invalid_message_text, parse_mode="Markdown")
         return False
@@ -3075,7 +3092,7 @@ async def send_game_ok(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         )
         return
 
-    invalid_messages = [text for text in source_messages if not looks_like_game_message(text)]
+    invalid_messages = [text for text in source_messages if not is_customer_game_entry(text)]
     if invalid_messages:
         await reply_text(
             update,
@@ -3188,7 +3205,7 @@ async def send_game_ok_plus(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         )
         return
 
-    invalid_messages = [text for text in source_messages if not looks_like_game_message(text)]
+    invalid_messages = [text for text in source_messages if not is_customer_game_entry(text)]
     if invalid_messages:
         await reply_text(
             update,
@@ -3370,7 +3387,7 @@ async def send_ds_ok_from_button(
         )
         return
 
-    invalid_messages = [text for text in source_messages if not looks_like_game_message(text)]
+    invalid_messages = [text for text in source_messages if not is_customer_game_entry(text)]
     if invalid_messages:
         await reply_text(
             update,
@@ -3451,7 +3468,7 @@ async def send_ds_ok(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         )
         return
 
-    invalid_messages = [text for text in source_messages if not looks_like_game_message(text)]
+    invalid_messages = [text for text in source_messages if not is_customer_game_entry(text)]
     if invalid_messages:
         await reply_text(
             update,
@@ -3802,7 +3819,7 @@ async def remember_recent_game_message(update: Update, context: ContextTypes.DEF
         logger.info("MEMORY_HANDLER skipped trigger text chat_id=%s", getattr(message, "chat_id", None))
         return
 
-    is_game_text = looks_like_game_message(text)
+    is_game_text = is_customer_game_entry(text)
 
     if is_game_text:
         record_daytime_game_activity(message)
