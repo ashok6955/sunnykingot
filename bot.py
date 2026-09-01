@@ -407,6 +407,12 @@ def record_daytime_game_activity(message, now: datetime | None = None, customer_
     cutoff_day = (current_time - timedelta(days=2)).date().isoformat()
     activity = {day: users for day, users in activity.items() if day >= cutoff_day}
     save_daily_game_activity(activity)
+    logger.info(
+        "EARLY_ACCESS activity recorded customer_id=%s day=%s time=%s",
+        user_id,
+        day_key,
+        current_time.strftime("%H:%M:%S"),
+    )
 
 
 def is_customer_allowed_early_game(
@@ -426,7 +432,17 @@ def is_customer_allowed_early_game(
         return True
 
     previous_day = (current_time - timedelta(days=1)).date().isoformat()
-    return str(user_id) in load_daily_game_activity().get(previous_day, {})
+    previous_day_activity = load_daily_game_activity().get(previous_day, {})
+    allowed = str(user_id) in previous_day_activity
+    logger.info(
+        "EARLY_ACCESS check customer_id=%s time=%s previous_day=%s allowed=%s recorded_customers=%s",
+        user_id,
+        current_time.strftime("%H:%M:%S"),
+        previous_day,
+        allowed,
+        len(previous_day_activity),
+    )
+    return allowed
 
 
 def load_vip_user_ids() -> set[int]:
@@ -3002,17 +3018,6 @@ async def process_game_approval(
     if customer_id is None:
         customer_id = get_approval_customer_id(message)
 
-    if require_previous_day_activity and not is_customer_allowed_early_game(
-        message,
-        customer_id=customer_id,
-    ):
-        await reply_text(update, context, EARLY_GAME_NOT_ALLOWED_TEXT, parse_mode="Markdown")
-        return False
-
-    if not allow_during_approval_block and is_game_approval_blocked(message, customer_id=customer_id):
-        await send_normal_time_over_vip_offer(update, context, message, customer_id=customer_id)
-        return False
-
     source_messages, used_reply_message, reply_message_id = collect_game_source_messages(message)
     source_messages = [text for text in source_messages if text.strip()]
 
@@ -3030,6 +3035,20 @@ async def process_game_approval(
     invalid_messages = [text for text in source_messages if not is_customer_game_entry(text)]
     if invalid_messages:
         await reply_text(update, context, invalid_message_text, parse_mode="Markdown")
+        return False
+
+    # Check schedule access only after confirming that an actual game is being
+    # approved. This prevents menu taps or ordinary text from receiving a
+    # TIME OVER reply during a blocked window.
+    if require_previous_day_activity and not is_customer_allowed_early_game(
+        message,
+        customer_id=customer_id,
+    ):
+        await reply_text(update, context, EARLY_GAME_NOT_ALLOWED_TEXT, parse_mode="Markdown")
+        return False
+
+    if not allow_during_approval_block and is_game_approval_blocked(message, customer_id=customer_id):
+        await send_normal_time_over_vip_offer(update, context, message, customer_id=customer_id)
         return False
 
     if require_payment_verification:
