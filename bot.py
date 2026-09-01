@@ -50,6 +50,14 @@ QUIET_HOURS_END = time(6, 0)
 BUTTON_SESSION_GAP = timedelta(minutes=30)
 CONTROL_PANEL_OPEN_DELAY_SECONDS = 10
 EARLY_GAME_ACCESS_END = time(5, 1)
+# Render Free instances do not retain local JSON files after a restart. Keep
+# overnight games available rather than incorrectly rejecting active customers
+# when their previous-day activity record has been cleared by the platform.
+REQUIRE_PREVIOUS_DAY_ACTIVITY = os.getenv("REQUIRE_PREVIOUS_DAY_ACTIVITY", "false").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+}
 APPROVAL_DUPLICATE_WINDOW = timedelta(seconds=45)
 APPROVAL_BLOCK_WINDOWS = (
     (time(15, 5), time(15, 15)),
@@ -422,6 +430,13 @@ def is_customer_allowed_early_game(
 ) -> bool:
     current_time = now or datetime.now(BOT_TIMEZONE)
     if current_time.time() >= EARLY_GAME_ACCESS_END:
+        return True
+
+    if not REQUIRE_PREVIOUS_DAY_ACTIVITY:
+        logger.info(
+            "EARLY_ACCESS allowed without activity gate time=%s",
+            current_time.strftime("%H:%M:%S"),
+        )
         return True
 
     user_id = customer_id or parse_chat_id(getattr(getattr(message, "from_user", None), "id", None))
