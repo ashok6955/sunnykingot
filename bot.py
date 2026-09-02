@@ -49,6 +49,7 @@ QUIET_HOURS_START = time(5, 1)
 QUIET_HOURS_END = time(6, 0)
 BUTTON_SESSION_GAP = timedelta(minutes=30)
 CONTROL_PANEL_OPEN_DELAY_SECONDS = 10
+BOT_MESSAGE_AUTO_DELETE_SECONDS = 30 * 60
 EARLY_GAME_ACCESS_END = time(5, 1)
 # Render Free instances do not retain local JSON files after a restart. Keep
 # overnight games available rather than incorrectly rejecting active customers
@@ -1290,11 +1291,60 @@ def can_allow_overnight_game_approval(message, *, customer_id: int | None = None
     )
 
 
-async def send_with_retry(send_callable, *args, retries: int = 2, retry_delay: float = 1.0, **kwargs):
+def should_auto_delete_bot_message(chat_id: int | str | None, text: object) -> bool:
+    """Keep permanent confirmations, target games, and QR media out of cleanup."""
+    if is_configured_target_group(chat_id):
+        return False
+
+    normalized_text = str(text or "").upper()
+    return not (
+        "GAME OK" in normalized_text
+        or "DS OK" in normalized_text
+        or "DISAWAR GAME OK" in normalized_text
+    )
+
+
+def schedule_bot_message_auto_delete(send_callable, sent_message, *, chat_id, business_connection_id: str | None) -> None:
+    """Schedule cleanup for ordinary bot responses without blocking the reply."""
+    bot = getattr(send_callable, "__self__", None)
+    message_id = getattr(sent_message, "message_id", None)
+    if bot is None or message_id is None:
+        return
+
+    asyncio.create_task(
+        delete_bot_message_after_delay(
+            bot,
+            chat_id,
+            message_id,
+            BOT_MESSAGE_AUTO_DELETE_SECONDS,
+            business_connection_id=business_connection_id,
+        )
+    )
+
+
+async def send_with_retry(
+    send_callable,
+    *args,
+    retries: int = 2,
+    retry_delay: float = 1.0,
+    auto_delete: bool | None = None,
+    **kwargs,
+):
     last_error = None
     for attempt in range(retries + 1):
         try:
-            return await send_callable(*args, **kwargs)
+            sent_message = await send_callable(*args, **kwargs)
+            chat_id = kwargs.get("chat_id")
+            if auto_delete is None:
+                auto_delete = should_auto_delete_bot_message(chat_id, kwargs.get("text"))
+            if auto_delete:
+                schedule_bot_message_auto_delete(
+                    send_callable,
+                    sent_message,
+                    chat_id=chat_id,
+                    business_connection_id=kwargs.get("business_connection_id"),
+                )
+            return sent_message
         except TimedOut as error:
             last_error = error
             logger.warning("Telegram request timed out on attempt %s/%s", attempt + 1, retries + 1)
@@ -1793,12 +1843,19 @@ async def reply_text(
     )
 
 
-async def reply_photo(update: Update, context: ContextTypes.DEFAULT_TYPE, photo) -> None:
+async def reply_photo(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    photo,
+    *,
+    auto_delete: bool = True,
+) -> None:
     message = get_update_message(update)
     await send_with_retry(
         context.bot.send_photo,
         chat_id=message.chat_id,
         photo=photo,
+        auto_delete=auto_delete,
         **get_business_kwargs(update),
     )
 
@@ -2401,7 +2458,7 @@ async def send_next_qr(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         save_state(state)
 
     image_bytes = image_path.read_bytes()
-    await reply_photo(update, context, image_bytes)
+    await reply_photo(update, context, image_bytes, auto_delete=False)
 
 
 def is_meetup_qr_request(text: str) -> bool:
