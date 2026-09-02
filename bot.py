@@ -1272,11 +1272,8 @@ def is_in_time_windows(windows, current_time: time | None = None) -> bool:
 
 
 def is_game_approval_blocked(message=None, *, customer_id: int | None = None) -> bool:
-    """Apply the normal or VIP approval schedule to Game OK and DS OK only."""
-    if customer_id is None:
-        customer_id = get_approval_customer_id(message) if message is not None else None
-    windows = APPROVAL_BLOCK_WINDOWS if customer_id in load_vip_user_ids() else NORMAL_APPROVAL_BLOCK_WINDOWS
-    return is_in_time_windows(windows)
+    """Game and DS approvals are available to every customer at all game times."""
+    return False
 
 
 def can_allow_overnight_game_approval(message, *, customer_id: int | None = None) -> bool:
@@ -3901,9 +3898,8 @@ def main() -> None:
 
     application.add_handler(TypeHandler(Update, log_incoming_update), group=-3)
     application.add_handler(MessageHandler(filters.ALL, handle_meetup_qr_only_group), group=-2)
-    application.add_handler(MessageHandler(EARLY_GAME_ACCESS_FILTER, enforce_early_game_access), group=-1)
-    # Early-morning permission takes priority over the normal time-over offer.
-    application.add_handler(MessageHandler(NORMAL_GAME_TIME_WINDOW_FILTER, enforce_normal_game_time_window), group=-1)
+    # Customer games are accepted for all users. Do not register the old
+    # early-access or normal time-over filters, which could reject valid games.
     application.add_handler(CommandHandler("blockuser", block_user), group=0)
     application.add_handler(CommandHandler("unblockuser", unblock_user), group=0)
     application.add_handler(CommandHandler("addvip", add_vip_user), group=0)
