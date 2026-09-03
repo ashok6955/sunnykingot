@@ -1275,22 +1275,17 @@ def is_in_time_windows(windows, current_time: time | None = None) -> bool:
 
 
 def is_game_approval_blocked(message=None, *, customer_id: int | None = None) -> bool:
-    """Game and DS approvals are available to every customer at all game times."""
-    return False
+    """Apply the configured normal/VIP schedule to Game OK approvals."""
+    if customer_id is None:
+        customer_id = get_approval_customer_id(message) if message is not None else None
+    windows = APPROVAL_BLOCK_WINDOWS if customer_id in load_vip_user_ids() else NORMAL_APPROVAL_BLOCK_WINDOWS
+    return is_in_time_windows(windows)
 
 
 def can_allow_overnight_game_approval(message, *, customer_id: int | None = None) -> bool:
-    """Let an active normal customer approve games during the overnight window."""
-    if customer_id is None:
-        customer_id = get_approval_customer_id(message)
-    if customer_id is None or customer_id in load_vip_user_ids():
-        return False
-
-    overnight_window = ((time(0, 10), time(4, 0)),)
-    return is_in_time_windows(overnight_window) and is_customer_allowed_early_game(
-        message,
-        customer_id=customer_id,
-    )
+    """The configured overnight block also applies to normal customers."""
+    del message, customer_id
+    return False
 
 
 def should_auto_delete_bot_message(chat_id: int | str | None, text: object) -> bool:
@@ -3981,8 +3976,9 @@ def main() -> None:
 
     application.add_handler(TypeHandler(Update, log_incoming_update), group=-3)
     application.add_handler(MessageHandler(filters.ALL, handle_meetup_qr_only_group), group=-2)
-    # Customer games are accepted for all users. Do not register the old
-    # early-access or normal time-over filters, which could reject valid games.
+    # Keep the normal time-over schedule. The old early-access restriction is
+    # intentionally not registered, so customers never receive Game Not Allowed.
+    application.add_handler(MessageHandler(NORMAL_GAME_TIME_WINDOW_FILTER, enforce_normal_game_time_window), group=-1)
     application.add_handler(CommandHandler("blockuser", block_user), group=0)
     application.add_handler(CommandHandler("unblockuser", unblock_user), group=0)
     application.add_handler(CommandHandler("addvip", add_vip_user), group=0)
