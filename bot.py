@@ -21,6 +21,7 @@ IMAGES_DIR = BASE_DIR / "images"
 CHART_IMAGE_DIR = BASE_DIR / "chart_image"
 NORMAL_CHART_IMAGE_PATH = CHART_IMAGE_DIR / "normal.png"
 WELCOME_VIDEO_PATH = BASE_DIR / "welcome_video" / "welcome.mp4"
+GAME_NOTICE_VIDEO_PATH = BASE_DIR / "welcome_video" / "game_notice.mp4"
 STATE_FILE = BASE_DIR / "state.json"
 CHAT_MEMORY_FILE = BASE_DIR / "chat_memory.json"
 SETTINGS_FILE = BASE_DIR / "bot_settings.json"
@@ -157,6 +158,7 @@ EARLY_GAME_NOT_ALLOWED_TEXT = (
     "📩 *कृपया Sunny Ji से Telegram पर संपर्क करें।*\n"
     "पहले approval लें, उसके बाद ही गेम भेजें।"
 )
+GAME_NOTICE_TEXT = "⚠️ *जरूरी सूचना*\n\nकृपया जरूरी सूचना की पूरी वीडियो देखें।"
 
 WELCOME_CONTROL_PANEL_TEXT = (
     "👑 SUNNY KING OF KHAIWAL 👑\n\n"
@@ -1966,6 +1968,29 @@ async def send_welcome_video(update: Update, context: ContextTypes.DEFAULT_TYPE)
     except Exception:
         # Do not prevent the welcome panel from working if Telegram rejects the media.
         logger.exception("Could not send welcome video chat_id=%s", message.chat_id)
+
+
+async def send_game_notice_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Send the required notice before the game video for a customer game."""
+    message = get_update_message(update)
+    if is_configured_target_group(getattr(message, "chat_id", None)) or is_meetup_qr_only_chat(getattr(message, "chat_id", None)):
+        return
+
+    if not GAME_NOTICE_VIDEO_PATH.is_file():
+        logger.warning("Game notice video is missing at path=%s", GAME_NOTICE_VIDEO_PATH)
+        return
+
+    await reply_text(update, context, GAME_NOTICE_TEXT, parse_mode="Markdown")
+    try:
+        await send_with_retry(
+            context.bot.send_video,
+            chat_id=message.chat_id,
+            video=GAME_NOTICE_VIDEO_PATH.read_bytes(),
+            supports_streaming=True,
+            **get_business_kwargs(update),
+        )
+    except Exception:
+        logger.exception("Could not send game notice video chat_id=%s", message.chat_id)
 
 
 async def send_rules_book(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -3919,6 +3944,7 @@ async def remember_recent_game_message(update: Update, context: ContextTypes.DEF
         save_chat_memory(memory)
         clear_approval_state_for_chat(message)
         logger.info("MEMORY_HANDLER saved game chat_id=%s count=%s", getattr(message, "chat_id", None), len(memory[chat_key]))
+        await send_game_notice_video(update, context)
 
     try:
         clear_control_panel_for_message(message)
