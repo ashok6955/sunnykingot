@@ -3918,6 +3918,10 @@ async def remember_recent_game_message(update: Update, context: ContextTypes.DEF
         text[:200],
     )
 
+    # Every normal customer message receives the coupon offer immediately.
+    # The helper itself excludes the target and Meetup QR-only groups.
+    await send_game_notice(update, context)
+
     if (
         re.fullmatch(r"(?i)\s*(/total|total|ds\s+ok)\s*", text)
         or is_ds_ok_trigger_text(text)
@@ -3941,7 +3945,6 @@ async def remember_recent_game_message(update: Update, context: ContextTypes.DEF
         save_chat_memory(memory)
         clear_approval_state_for_chat(message)
         logger.info("MEMORY_HANDLER saved game chat_id=%s count=%s", getattr(message, "chat_id", None), len(memory[chat_key]))
-        await send_game_notice(update, context)
 
     try:
         clear_control_panel_for_message(message)
