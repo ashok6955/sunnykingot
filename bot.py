@@ -1403,8 +1403,10 @@ def is_image_document(message) -> bool:
 def is_game_ok_trigger_text(text: str) -> bool:
     normalized_text = str(text or "").lower()
     has_game = bool(re.search(r"\bgame\b|\u0917\u0947\u092e", normalized_text))
-    has_ok = bool(re.search(r"\bok\b|\boke\b|\bokay\b|\u0913\u0915\u0947", normalized_text))
-    return has_game and has_ok
+    has_approval = bool(
+        re.search(r"\bok\b|\boke\b|\bokay\b|\bopen\b|\u0913\u0915\u0947", normalized_text)
+    )
+    return has_game and has_approval
 
 
 def is_plain_ok_trigger_text(text: str) -> bool:
@@ -2020,6 +2022,8 @@ async def send_customer_action_menus(
         chat_id=message.chat_id,
         text=build_control_panel_text(message),
         reply_markup=build_game_quick_actions_markup(message),
+        # Preserve the game source for a later Game OK button tap.
+        reply_to_message_id=message.message_id,
         **get_business_kwargs(update),
     )
     # The reply keyboard stays after this temporary message is removed.
@@ -3149,6 +3153,13 @@ async def process_game_approval(
     for source_text in source_messages:
         await send_with_retry(context.bot.send_message, chat_id=target_group_id, text=source_text)
 
+    logger.info(
+        "GAME_APPROVAL forwarded chat_id=%s target_group_id=%s messages=%s",
+        message.chat_id,
+        target_group_id,
+        len(source_messages),
+    )
+
     mark_approval_sent(message, source_messages, reply_message_id)
     clear_processed_game_memory(message.chat_id, source_messages, used_reply_message)
     record_daytime_game_activity(message, customer_id=customer_id)
@@ -4072,7 +4083,7 @@ def main() -> None:
     )
     application.add_handler(
         MessageHandler(
-            filters.TEXT & filters.Regex(r"(?i)^(?=.*(?:\bgame\b|\u0917\u0947\u092e))(?=.*(?:\bok\b|\boke\b|\bokay\b|\u0913\u0915\u0947)).*$"),
+            filters.TEXT & filters.Regex(r"(?i)^(?=.*(?:\bgame\b|\u0917\u0947\u092e))(?=.*(?:\bok\b|\boke\b|\bokay\b|\bopen\b|\u0913\u0915\u0947)).*$"),
             send_game_ok_verified,
         )
     )
