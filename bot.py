@@ -21,7 +21,6 @@ IMAGES_DIR = BASE_DIR / "images"
 CHART_IMAGE_DIR = BASE_DIR / "chart_image"
 NORMAL_CHART_IMAGE_PATH = CHART_IMAGE_DIR / "normal.png"
 WELCOME_VIDEO_PATH = BASE_DIR / "welcome_video" / "welcome.mp4"
-GAME_NOTICE_VIDEO_PATH = BASE_DIR / "welcome_video" / "game_notice.mp4"
 STATE_FILE = BASE_DIR / "state.json"
 CHAT_MEMORY_FILE = BASE_DIR / "chat_memory.json"
 SETTINGS_FILE = BASE_DIR / "bot_settings.json"
@@ -78,7 +77,6 @@ NORMAL_APPROVAL_BLOCK_WINDOWS = (
     (time(21, 30), time(22, 10)),
     (time(23, 30), time(23, 59, 59)),
     (time(0, 0), time(0, 10)),
-    (time(0, 10), time(4, 0)),
 )
 GAME_OK_TRIGGER_TEXT = "\U0001F3AE GAME OK \u2714\ufe0f\u2714\ufe0f"
 HAPPY_HOURS_PATTERN = r"(?i)\bhappy\s*hour[s]?\b|\bhappy\s*hor[s]?\b|\bhappy\s*hourse\b"
@@ -158,7 +156,13 @@ EARLY_GAME_NOT_ALLOWED_TEXT = (
     "📩 *कृपया Sunny Ji से Telegram पर संपर्क करें।*\n"
     "पहले approval लें, उसके बाद ही गेम भेजें।"
 )
-GAME_NOTICE_TEXT = "⚠️ *जरूरी सूचना*\n\nकृपया जरूरी सूचना की पूरी वीडियो देखें।"
+GAME_NOTICE_TEXT = (
+    "🔥 *RATE 10 × 1000* 🔥\n"
+    "🎟️ *Coupon लेने के लिए WhatsApp पर Message करें*\n"
+    "📲 *9654080647*\n"
+    "🔗 [WhatsApp पर Message करें](https://wa.me/919654080647)\n"
+    "👑 *Powered by Sunny Ji*"
+)
 
 WELCOME_CONTROL_PANEL_TEXT = (
     "👑 SUNNY KING OF KHAIWAL 👑\n\n"
@@ -1965,27 +1969,13 @@ async def send_welcome_video(update: Update, context: ContextTypes.DEFAULT_TYPE)
         logger.exception("Could not send welcome video chat_id=%s", message.chat_id)
 
 
-async def send_game_notice_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Send the required notice before the game video for a customer game."""
+async def send_game_notice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Send the coupon and WhatsApp notice after a customer game."""
     message = get_update_message(update)
     if is_configured_target_group(getattr(message, "chat_id", None)) or is_meetup_qr_only_chat(getattr(message, "chat_id", None)):
         return
 
-    if not GAME_NOTICE_VIDEO_PATH.is_file():
-        logger.warning("Game notice video is missing at path=%s", GAME_NOTICE_VIDEO_PATH)
-        return
-
     await reply_text(update, context, GAME_NOTICE_TEXT, parse_mode="Markdown")
-    try:
-        await send_with_retry(
-            context.bot.send_video,
-            chat_id=message.chat_id,
-            video=GAME_NOTICE_VIDEO_PATH.read_bytes(),
-            supports_streaming=True,
-            **get_business_kwargs(update),
-        )
-    except Exception:
-        logger.exception("Could not send game notice video chat_id=%s", message.chat_id)
 
 
 async def send_rules_book(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -3939,7 +3929,7 @@ async def remember_recent_game_message(update: Update, context: ContextTypes.DEF
         save_chat_memory(memory)
         clear_approval_state_for_chat(message)
         logger.info("MEMORY_HANDLER saved game chat_id=%s count=%s", getattr(message, "chat_id", None), len(memory[chat_key]))
-        await send_game_notice_video(update, context)
+        await send_game_notice(update, context)
 
     try:
         clear_control_panel_for_message(message)
