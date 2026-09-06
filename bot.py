@@ -157,12 +157,10 @@ EARLY_GAME_NOT_ALLOWED_TEXT = (
     "पहले approval लें, उसके बाद ही गेम भेजें।"
 )
 GAME_NOTICE_TEXT = (
-    "🔥 *RATE 10 × 1000* 🔥\n"
-    "💰 *₹1000 का रेट लेने के लिए अभी अपना Coupon लें।*\n"
-    "🎟️ *Coupon लेने के लिए WhatsApp पर Message करें।*\n"
-    "📲 *9654080647*\n"
-    "🔗 [https://wa.me/919654080647](https://wa.me/919654080647)\n"
-    "👑 *Powered by Sunny Ji*"
+    "📢 *सभी ग्राहक भाइयों को सूचित किया जाता है कि अब से सभी काम सिर्फ WhatsApp पर ही लिया जाएगा।*\n\n"
+    "कृपया अपना काम WhatsApp पर ही भेजें।\n"
+    "📲 *WhatsApp Number: 9654080647*\n"
+    "🔗 [https://wa.me/919654080647](https://wa.me/919654080647)"
 )
 
 WELCOME_CONTROL_PANEL_TEXT = (
